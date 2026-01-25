@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/**'
       - 'generate-dockerfile.py'
+      - 'find-dependents.py'
       - '.github/workflows/build.yml'
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
@@ -14,15 +15,12 @@ on:
     paths:
       - 'src/**'
       - 'generate-dockerfile.py'
+      - 'find-dependents.py'
       - '.github/workflows/build.yml'
   workflow_dispatch:
     inputs:
-      images:
-        description: 'JSON array of images to build (e.g. ["ansible","terraform"])'
-        required: false
-        type: string
-      base_tag:
-        description: 'Base image tag override for hardened bases (default: main)'
+      from_image:
+        description: 'Base image name:tag that was just built (e.g. alpine-hardened:sha-abc1234)'
         required: false
         type: string
 
@@ -37,23 +35,24 @@ env:
 
 # ======================================================================
 # Two modes:
-#   1. Orchestrator (push/PR/manual without images input):
-#      detect changes → build base(s) → dispatch self with derived list
-#   2. Builder (dispatched with images input):
-#      build each image in parallel matrix → test each image
+#   1. Orchestrator (push/PR/manual without from_image):
+#      detect changes → build roots → dispatch dependents
+#      also builds changed derived images that don't depend on rebuilt roots
+#   2. Recursive (dispatched with from_image):
+#      resolve dependents → build → test → dispatch next level
 # ======================================================================
 
 jobs:
   # ==================================================================
-  # ORCHESTRATOR MODE - detect changes, build base(s), dispatch derived
+  # ORCHESTRATOR MODE - detect changes, build roots, dispatch dependents
   # ==================================================================
 
   detect-changes:
-    if: inputs.images == ''
+    if: inputs.from_image == ''
     runs-on: ubuntu-latest
     outputs:
-      base_images: ${{ steps.detect.outputs.base_images }}
-      derived_images: ${{ steps.detect.outputs.derived_images }}
+      root_images: ${{ steps.detect.outputs.root_images }}
+      changed_derived: ${{ steps.detect.outputs.changed_derived }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,44 +79,70 @@ jobs:
             build_all=true
           fi
 
-          if [ "$build_all" = "true" ]; then
-            base_imgs=$(ls -d src/*-hardened/ 2>/dev/null | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(. != ""))')
-            derived=$(ls -d src/*/ | xargs -n1 basename | grep -vE '.*-hardened$' | jq -R -s -c 'split("\n") | map(select(. != ""))')
-            echo "base_images=$base_imgs" >> $GITHUB_OUTPUT
-            echo "derived_images=$derived" >> $GITHUB_OUTPUT
-          else
-            # Check if generator or workflow changed
-            if git diff --name-only $base HEAD | grep -qE '(generate-dockerfile\.py|\.github/workflows/build\.yml)'; then
+          # Generator or workflow changed → build everything
+          if [ "$build_all" = "false" ]; then
+            if git diff --name-only "$base" HEAD | grep -qE '(generate-dockerfile\.py|find-dependents\.py|\.github/workflows/build\.yml)'; then
               build_all=true
             fi
-
-            # Check if any base image changed
-            changed_bases=$(git diff --name-only $base HEAD | grep -E '^src/.*-hardened/' | cut -d'/' -f2 | sort -u)
-            if [ -n "$changed_bases" ]; then
-              build_all=true
-            fi
-
-            if [ "$build_all" = "true" ]; then
-              base_imgs=$(ls -d src/*-hardened/ 2>/dev/null | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(. != ""))')
-              derived=$(ls -d src/*/ | xargs -n1 basename | grep -vE '.*-hardened$' | jq -R -s -c 'split("\n") | map(select(. != ""))')
-            else
-              base_imgs='[]'
-              derived=$(git diff --name-only $base HEAD | grep '^src/' | cut -d'/' -f2 | sort -u | grep -vE '.*-hardened$' | jq -R -s -c 'split("\n") | map(select(. != ""))')
-            fi
-            echo "base_images=$base_imgs" >> $GITHUB_OUTPUT
-            echo "derived_images=$derived" >> $GITHUB_OUTPUT
           fi
 
-  build-base:
+          all_roots=$(python3 find-dependents.py --roots)
+
+          if [ "$build_all" = "true" ]; then
+            echo "root_images=$all_roots" >> $GITHUB_OUTPUT
+            echo "changed_derived=[]" >> $GITHUB_OUTPUT
+          else
+            # Find changed image directories
+            changed=$(git diff --name-only "$base" HEAD | grep '^src/' | cut -d'/' -f2 | sort -u)
+
+            # Separate into roots and derived
+            changed_roots='[]'
+            changed_derived='[]'
+
+            for img in $changed; do
+              # Skip if directory doesn't have tools.yaml
+              [ -f "src/$img/tools.yaml" ] || continue
+              if echo "$all_roots" | jq -e ". | index(\"$img\")" > /dev/null 2>&1; then
+                changed_roots=$(echo "$changed_roots" | jq -c ". + [\"$img\"]")
+              else
+                changed_derived=$(echo "$changed_derived" | jq -c ". + [\"$img\"]")
+              fi
+            done
+
+            # Remove derived images that are dependents of changed roots
+            # (they will be built via dispatch-dependents instead)
+            for root in $(echo "$changed_roots" | jq -r '.[]'); do
+              dependents=$(python3 find-dependents.py --from-image "$root")
+              for dep in $(echo "$dependents" | jq -r '.[]'); do
+                changed_derived=$(echo "$changed_derived" | jq -c "map(select(. != \"$dep\"))")
+              done
+            done
+
+            echo "root_images=$changed_roots" >> $GITHUB_OUTPUT
+            echo "changed_derived=$changed_derived" >> $GITHUB_OUTPUT
+          fi
+
+  build-roots:
     needs: detect-changes
-    if: needs.detect-changes.outputs.base_images != '[]'
+    if: needs.detect-changes.outputs.root_images != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJson(needs.detect-changes.outputs.base_images) }}
+        image: ${{ fromJson(needs.detect-changes.outputs.root_images) }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read image config
+        id: config
+        run: |
+          multi_arch=$(grep -E '^multi_arch:' src/${{ matrix.image }}/tools.yaml | cut -d':' -f2 | tr -d ' ' || echo "false")
+          echo "multi_arch=$multi_arch" >> $GITHUB_OUTPUT
+          if [ "$multi_arch" = "true" ]; then
+            echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
+          else
+            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
+          fi
 
       - name: Generate Dockerfile
         run: |
@@ -138,6 +163,7 @@ jobs:
             type=sha,prefix=sha-
 
       - name: Set up QEMU
+        if: steps.config.outputs.multi_arch == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -154,71 +180,168 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./src/${{ matrix.image }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ steps.config.outputs.platforms }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
 
-  dispatch-derived:
-    needs: [detect-changes, build-base]
+  build-changed-derived:
+    needs: [detect-changes, build-roots]
     if: |
       always() &&
       needs.detect-changes.result == 'success' &&
-      (needs.build-base.result == 'success' || needs.build-base.result == 'skipped') &&
-      needs.detect-changes.outputs.derived_images != '[]'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Compute base tag
-        id: base
-        run: |
-          if [ '${{ needs.detect-changes.outputs.base_images }}' != '[]' ]; then
-            echo "tag=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=main" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Dispatch recursive build
-        run: |
-          images='${{ needs.detect-changes.outputs.derived_images }}'
-          base_tag='${{ steps.base.outputs.tag }}'
-          ref='${{ github.head_ref || github.ref_name }}'
-
-          echo "=== Recursive dispatch ==="
-          echo "  ref:      $ref"
-          echo "  base_tag: $base_tag"
-          echo "  images:   $images"
-
-          gh workflow run build.yml \
-            -R "${{ github.repository }}" \
-            --ref "$ref" \
-            -f images="$images" \
-            -f base_tag="$base_tag"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ==================================================================
-  # BUILDER MODE - build + test images (dispatched recursively)
-  # ==================================================================
-
-  build-image:
-    if: inputs.images != ''
+      (needs.build-roots.result == 'success' || needs.build-roots.result == 'skipped') &&
+      needs.detect-changes.outputs.changed_derived != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJson(inputs.images) }}
+        image: ${{ fromJson(needs.detect-changes.outputs.changed_derived) }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Read image config
         id: config
         run: |
-          cd src/${{ matrix.image }}
-          multi_arch=$(grep -E '^multi_arch:' tools.yaml | cut -d':' -f2 | tr -d ' ' || echo "false")
+          multi_arch=$(grep -E '^multi_arch:' src/${{ matrix.image }}/tools.yaml | cut -d':' -f2 | tr -d ' ' || echo "false")
           echo "multi_arch=$multi_arch" >> $GITHUB_OUTPUT
+          if [ "$multi_arch" = "true" ]; then
+            echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
+          else
+            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
+          fi
 
+      - name: Generate Dockerfile
+        run: |
+          python3 generate-dockerfile.py --image ${{ matrix.image }}
+          echo "=== Dockerfile for ${{ matrix.image }} ==="
+          cat src/${{ matrix.image }}/dockerfile
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_PATH }}/${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr,prefix=pr-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-
+
+      - name: Set up QEMU
+        if: steps.config.outputs.multi_arch == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src/${{ matrix.image }}
+          platforms: ${{ steps.config.outputs.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+  dispatch-dependents:
+    needs: [detect-changes, build-roots]
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.build-roots.result == 'success' &&
+      needs.detect-changes.outputs.root_images != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dispatch dependent builds
+        run: |
+          roots='${{ needs.detect-changes.outputs.root_images }}'
+          tag="sha-${GITHUB_SHA::7}"
+          ref='${{ github.head_ref || github.ref_name }}'
+
+          echo "=== Dispatching dependents ==="
+          echo "  roots: $roots"
+          echo "  tag:   $tag"
+          echo "  ref:   $ref"
+
+          for root in $(echo "$roots" | jq -r '.[]'); do
+            dependents=$(python3 find-dependents.py --from-image "$root")
+            echo "  $root dependents: $dependents"
+            if [ "$dependents" != "[]" ]; then
+              echo "  → Dispatching from_image=${root}:${tag}"
+              gh workflow run build.yml \
+                -R "${{ github.repository }}" \
+                --ref "$ref" \
+                -f from_image="${root}:${tag}"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==================================================================
+  # RECURSIVE MODE - from_image provided, build dependents and recurse
+  # ==================================================================
+
+  resolve-dependents:
+    if: inputs.from_image != ''
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.resolve.outputs.images }}
+      from_name: ${{ steps.resolve.outputs.from_name }}
+      from_tag: ${{ steps.resolve.outputs.from_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve dependents
+        id: resolve
+        run: |
+          from_image='${{ inputs.from_image }}'
+          from_name="${from_image%%:*}"
+          from_tag="${from_image#*:}"
+
+          echo "from_name=$from_name" >> $GITHUB_OUTPUT
+          echo "from_tag=$from_tag" >> $GITHUB_OUTPUT
+
+          images=$(python3 find-dependents.py --from-image "$from_name")
+          echo "images=$images" >> $GITHUB_OUTPUT
+
+          echo "=== Resolve ==="
+          echo "  from_image: $from_image"
+          echo "  from_name:  $from_name"
+          echo "  from_tag:   $from_tag"
+          echo "  dependents: $images"
+
+  build-image:
+    needs: resolve-dependents
+    if: needs.resolve-dependents.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.resolve-dependents.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read image config
+        id: config
+        run: |
+          multi_arch=$(grep -E '^multi_arch:' src/${{ matrix.image }}/tools.yaml | cut -d':' -f2 | tr -d ' ' || echo "false")
+          echo "multi_arch=$multi_arch" >> $GITHUB_OUTPUT
           if [ "$multi_arch" = "true" ]; then
             echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
           else
@@ -229,13 +352,12 @@ jobs:
         run: |
           python3 generate-dockerfile.py --image ${{ matrix.image }}
 
-          # Resolve base image tag from dispatch input
-          base_tag="${{ inputs.base_tag }}"
-          if [ -n "$base_tag" ] && [ "$base_tag" != "main" ]; then
-            echo "Overriding hardened base tags: main → $base_tag"
-            for base_name in $(ls -d src/*-hardened/ 2>/dev/null | xargs -n1 basename); do
-              sed -i "s|${base_name}:main|${base_name}:${base_tag}|g" src/${{ matrix.image }}/dockerfile
-            done
+          from_name='${{ needs.resolve-dependents.outputs.from_name }}'
+          from_tag='${{ needs.resolve-dependents.outputs.from_tag }}'
+
+          if [ -n "$from_tag" ] && [ "$from_tag" != "main" ]; then
+            echo "Overriding base tag: ${from_name}:main → ${from_name}:${from_tag}"
+            sed -i "s|${from_name}:main|${from_name}:${from_tag}|g" src/${{ matrix.image }}/dockerfile
           fi
 
           echo "=== Dockerfile for ${{ matrix.image }} ==="
@@ -276,13 +398,13 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
 
   test-image:
-    needs: build-image
-    if: inputs.images != ''
+    needs: [resolve-dependents, build-image]
+    if: needs.resolve-dependents.outputs.images != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJson(inputs.images) }}
+        image: ${{ fromJson(needs.resolve-dependents.outputs.images) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -304,3 +426,35 @@ jobs:
           else
             docker run --rm "$image" echo "Image runs successfully"
           fi
+
+  dispatch-next:
+    needs: [resolve-dependents, build-image, test-image]
+    if: |
+      needs.resolve-dependents.result == 'success' &&
+      needs.build-image.result == 'success' &&
+      needs.test-image.result == 'success' &&
+      needs.resolve-dependents.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dispatch next level
+        run: |
+          images='${{ needs.resolve-dependents.outputs.images }}'
+          tag="sha-${GITHUB_SHA::7}"
+          ref='${{ github.head_ref || github.ref_name }}'
+
+          echo "=== Dispatch next level ==="
+          for image in $(echo "$images" | jq -r '.[]'); do
+            dependents=$(python3 find-dependents.py --from-image "$image")
+            echo "  $image dependents: $dependents"
+            if [ "$dependents" != "[]" ]; then
+              echo "  → Dispatching from_image=${image}:${tag}"
+              gh workflow run build.yml \
+                -R "${{ github.repository }}" \
+                --ref "$ref" \
+                -f from_image="${image}:${tag}"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
