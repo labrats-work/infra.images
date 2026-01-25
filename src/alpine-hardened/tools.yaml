@@ -1,0 +1,65 @@
+# Alpine Hardened Base Image
+# Security-hardened Alpine base following CIS benchmarks and DevSec guidelines
+base: docker.io/alpine:3.22
+package_manager: apk
+multi_arch: true
+workdir: /app
+
+tools:
+  # Essential security packages
+  - name: security-base
+    description: Security baseline packages
+    method: script
+    script: |
+      apk add --no-cache ca-certificates tzdata
+
+  # System hardening
+  - name: hardening
+    description: CIS and DevSec security hardening
+    method: script
+    script: |
+      # Remove unnecessary packages and setuid binaries
+      apk del --purge apk-tools || true
+
+      # Remove shells for system accounts
+      sed -i 's|/bin/ash|/sbin/nologin|g' /etc/passwd
+
+      # Restrict /etc permissions
+      chmod 600 /etc/shadow
+      chmod 644 /etc/passwd
+      chmod 644 /etc/group
+
+      # Remove world-writable permissions
+      find / -xdev -type f -perm -0002 -exec chmod o-w {} \; 2>/dev/null || true
+      find / -xdev -type d -perm -0002 -exec chmod o-w {} \; 2>/dev/null || true
+
+      # Remove SUID/SGID binaries (security risk)
+      find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} \; 2>/dev/null || true
+
+      # Remove unnecessary users and groups
+      deluser games 2>/dev/null || true
+      deluser news 2>/dev/null || true
+      deluser uucp 2>/dev/null || true
+      deluser operator 2>/dev/null || true
+      deluser list 2>/dev/null || true
+      deluser irc 2>/dev/null || true
+
+      # Restrict cron (if present)
+      rm -rf /etc/cron.* /var/spool/cron 2>/dev/null || true
+
+      # Remove temp files
+      rm -rf /tmp/* /var/tmp/* /var/cache/apk/*
+
+      # Restrict /proc mount options will be handled at runtime
+
+      # Create security audit file
+      echo "Alpine Hardened - $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/hardened-version
+
+  # Non-root user setup
+  - name: nonroot-user
+    description: Create non-root user for running applications
+    method: script
+    script: |
+      addgroup -g 65532 -S nonroot
+      adduser -u 65532 -S -G nonroot -h /app -s /sbin/nologin nonroot
+      chown -R nonroot:nonroot /app

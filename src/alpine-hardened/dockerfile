@@ -1,0 +1,47 @@
+# alpine-hardened Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - security-base: Security baseline packages
+#   - hardening: CIS and DevSec security hardening
+#   - nonroot-user: Create non-root user for running applications
+
+FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="alpine-hardened infrastructure image"
+
+# Install security-base (Security baseline packages)
+RUN apk add --no-cache ca-certificates tzdata
+
+# Install hardening (CIS and DevSec security hardening)
+RUN apk del --purge apk-tools || true && \
+    sed -i 's|/bin/ash|/sbin/nologin|g' /etc/passwd && \
+    chmod 600 /etc/shadow && \
+    chmod 644 /etc/passwd && \
+    chmod 644 /etc/group && \
+    find / -xdev -type f -perm -0002 -exec chmod o-w {} \; 2>/dev/null || true && \
+    find / -xdev -type d -perm -0002 -exec chmod o-w {} \; 2>/dev/null || true && \
+    find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} \; 2>/dev/null || true && \
+    deluser games 2>/dev/null || true && \
+    deluser news 2>/dev/null || true && \
+    deluser uucp 2>/dev/null || true && \
+    deluser operator 2>/dev/null || true && \
+    deluser list 2>/dev/null || true && \
+    deluser irc 2>/dev/null || true && \
+    rm -rf /etc/cron.* /var/spool/cron 2>/dev/null || true && \
+    rm -rf /tmp/* /var/tmp/* /var/cache/apk/* && \
+    echo "Alpine Hardened - $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/hardened-version
+
+# Install nonroot-user (Create non-root user for running applications)
+RUN addgroup -g 65532 -S nonroot && \
+    adduser -u 65532 -S -G nonroot -h /app -s /sbin/nologin nonroot && \
+    chown -R nonroot:nonroot /app
+
+WORKDIR /app
+
+ENTRYPOINT []
+CMD []

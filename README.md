@@ -14,6 +14,7 @@ Infrastructure container images with declarative tool management via `tools.yaml
 | **k8s-tools** | kubectl, helm, kustomize, flux, sops, age | Alpine 3.22 | ✅ |
 | **ci-tools** | shellcheck, hadolint, actionlint, yamllint | Alpine 3.22 | ✅ |
 | **arc-runner** | GitHub ARC runner with Claude CLI | actions-runner | ❌ |
+| **alpine-hardened** | Security-hardened Alpine base | Alpine 3.22 | ✅ |
 
 ## Quick Start
 
