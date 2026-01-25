@@ -1,6 +1,6 @@
 # Kubernetes Tools Image Configuration
 # kubectl, helm, kustomize, flux, sops, age for cluster management
-base: docker.io/alpine:3.22
+base: ghcr.io/labrats-work/infra.images/alpine-hardened:main
 package_manager: apk
 multi_arch: true
 workdir: /app

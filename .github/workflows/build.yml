@@ -17,78 +17,192 @@ on:
       - '.github/workflows/build.yml'
   workflow_dispatch:
     inputs:
-      image:
-        description: 'Specific image to build (leave empty for all)'
+      images:
+        description: 'JSON array of images to build (e.g. ["ansible","terraform"])'
         required: false
         type: string
+      base_tag:
+        description: 'Base image tag for alpine-hardened (default: main)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  actions: write
 
 env:
   REGISTRY: ghcr.io
   REGISTRY_PATH: ghcr.io/${{ github.repository }}
 
+# ======================================================================
+# Two modes:
+#   1. Orchestrator (push/PR/manual without images input):
+#      detect changes → build base → dispatch self with derived list
+#   2. Builder (dispatched with images input):
+#      build each image in parallel matrix → test each image
+# ======================================================================
+
 jobs:
+  # ==================================================================
+  # ORCHESTRATOR MODE - detect changes, build base, dispatch derived
+  # ==================================================================
+
   detect-changes:
+    if: inputs.images == ''
     runs-on: ubuntu-latest
     outputs:
-      images: ${{ steps.detect.outputs.images }}
-      all_images: ${{ steps.all.outputs.images }}
+      base_changed: ${{ steps.detect.outputs.base_changed }}
+      derived_images: ${{ steps.detect.outputs.derived_images }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get all images
-        id: all
-        run: |
-          images=$(ls -d src/*/ | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(. != ""))')
-          echo "images=$images" >> $GITHUB_OUTPUT
-
-      - name: Detect changed images
+      - name: Detect changes
         id: detect
         run: |
-          if [ -n "${{ inputs.image }}" ]; then
-            # Manual trigger with specific image
-            echo 'images=["${{ inputs.image }}"]' >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" =~ ^refs/tags/ ]]; then
-            # Tag push - build all images
-            images=$(ls -d src/*/ | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(. != ""))')
-            echo "images=$images" >> $GITHUB_OUTPUT
-          else
-            # Detect changed files
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              base=${{ github.event.pull_request.base.sha }}
-            else
-              base=${{ github.event.before }}
-            fi
+          build_all=false
 
-            # If base is empty (first push), build all
-            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-              images=$(ls -d src/*/ | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(. != ""))')
-            else
-              # Get changed directories
-              changed=$(git diff --name-only $base HEAD | grep '^src/' | cut -d'/' -f2 | sort -u)
-
-              # If generator changed, rebuild all
-              if git diff --name-only $base HEAD | grep -q 'generate-dockerfile.py'; then
-                images=$(ls -d src/*/ | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(. != ""))')
-              elif [ -n "$changed" ]; then
-                images=$(echo "$changed" | jq -R -s -c 'split("\n") | map(select(. != ""))')
-              else
-                images='[]'
-              fi
-            fi
-            echo "images=$images" >> $GITHUB_OUTPUT
+          # Tag push → build everything
+          if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" =~ ^refs/tags/ ]]; then
+            build_all=true
           fi
 
-  build:
+          # Determine diff base
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base=${{ github.event.pull_request.base.sha }}
+          else
+            base=${{ github.event.before }}
+          fi
+
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            build_all=true
+          fi
+
+          if [ "$build_all" = "true" ]; then
+            echo "base_changed=true" >> $GITHUB_OUTPUT
+            derived=$(ls -d src/*/ | xargs -n1 basename | grep -v alpine-hardened | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            echo "derived_images=$derived" >> $GITHUB_OUTPUT
+          else
+            # Check if generator or workflow changed
+            if git diff --name-only $base HEAD | grep -qE '(generate-dockerfile\.py|\.github/workflows/build\.yml)'; then
+              build_all=true
+            fi
+
+            # Check if base image changed
+            if git diff --name-only $base HEAD | grep -q '^src/alpine-hardened/'; then
+              echo "base_changed=true" >> $GITHUB_OUTPUT
+              build_all=true
+            else
+              echo "base_changed=false" >> $GITHUB_OUTPUT
+            fi
+
+            if [ "$build_all" = "true" ]; then
+              derived=$(ls -d src/*/ | xargs -n1 basename | grep -v alpine-hardened | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            else
+              derived=$(git diff --name-only $base HEAD | grep '^src/' | cut -d'/' -f2 | sort -u | grep -v alpine-hardened | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            fi
+            echo "derived_images=$derived" >> $GITHUB_OUTPUT
+          fi
+
+  build-base:
     needs: detect-changes
-    if: needs.detect-changes.outputs.images != '[]'
+    if: needs.detect-changes.outputs.base_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Dockerfile
+        run: |
+          python3 generate-dockerfile.py --image alpine-hardened
+          cat src/alpine-hardened/dockerfile
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_PATH }}/alpine-hardened
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr,prefix=pr-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src/alpine-hardened
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=alpine-hardened
+          cache-to: type=gha,scope=alpine-hardened,mode=max
+
+  dispatch-derived:
+    needs: [detect-changes, build-base]
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      (needs.build-base.result == 'success' || needs.build-base.result == 'skipped') &&
+      needs.detect-changes.outputs.derived_images != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute base tag
+        id: base
+        run: |
+          if [ "${{ needs.detect-changes.outputs.base_changed }}" = "true" ]; then
+            echo "tag=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=main" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dispatch recursive build
+        run: |
+          images='${{ needs.detect-changes.outputs.derived_images }}'
+          base_tag='${{ steps.base.outputs.tag }}'
+          ref='${{ github.head_ref || github.ref_name }}'
+
+          echo "=== Recursive dispatch ==="
+          echo "  ref:      $ref"
+          echo "  base_tag: $base_tag"
+          echo "  images:   $images"
+
+          gh workflow run build.yml \
+            -R "${{ github.repository }}" \
+            --ref "$ref" \
+            -f images="$images" \
+            -f base_tag="$base_tag"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==================================================================
+  # BUILDER MODE - build + test images (dispatched recursively)
+  # ==================================================================
+
+  build-image:
+    if: inputs.images != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJson(needs.detect-changes.outputs.images) }}
-
+        image: ${{ fromJson(inputs.images) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -96,12 +210,9 @@ jobs:
         id: config
         run: |
           cd src/${{ matrix.image }}
-
-          # Parse tools.yaml for config
           multi_arch=$(grep -E '^multi_arch:' tools.yaml | cut -d':' -f2 | tr -d ' ' || echo "false")
           echo "multi_arch=$multi_arch" >> $GITHUB_OUTPUT
 
-          # Determine platforms
           if [ "$multi_arch" = "true" ]; then
             echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
           else
@@ -111,7 +222,15 @@ jobs:
       - name: Generate Dockerfile
         run: |
           python3 generate-dockerfile.py --image ${{ matrix.image }}
-          echo "=== Generated Dockerfile for ${{ matrix.image }} ==="
+
+          # Resolve base image tag from dispatch input
+          base_tag="${{ inputs.base_tag }}"
+          if [ -n "$base_tag" ] && [ "$base_tag" != "main" ]; then
+            echo "Overriding alpine-hardened tag: main → $base_tag"
+            sed -i "s|alpine-hardened:main|alpine-hardened:${base_tag}|g" src/${{ matrix.image }}/dockerfile
+          fi
+
+          echo "=== Dockerfile for ${{ matrix.image }} ==="
           cat src/${{ matrix.image }}/dockerfile
 
       - name: Docker meta
@@ -121,10 +240,6 @@ jobs:
           images: ${{ env.REGISTRY_PATH }}/${{ matrix.image }}
           tags: |
             type=ref,event=branch
-            type=ref,event=pr,prefix=pr-
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
             type=sha,prefix=sha-
 
       - name: Set up QEMU
@@ -152,67 +267,32 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.REGISTRY_PATH }}/${{ matrix.image }}:${{ steps.meta.outputs.version }}
-          format: spdx-json
-          output-file: sbom-${{ matrix.image }}.spdx.json
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-${{ matrix.image }}
-          path: sbom-${{ matrix.image }}.spdx.json
-
-  test:
-    needs: [detect-changes, build]
-    if: needs.detect-changes.outputs.images != '[]'
+  test-image:
+    needs: build-image
+    if: inputs.images != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJson(needs.detect-changes.outputs.images) }}
-
+        image: ${{ fromJson(inputs.images) }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get image tag
-        id: tag
-        run: |
-          if [[ "${{ github.ref }}" =~ ^refs/tags/ ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-          fi
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test image
         run: |
-          image="${{ env.REGISTRY_PATH }}/${{ matrix.image }}:${{ steps.tag.outputs.tag }}"
+          image="${{ env.REGISTRY_PATH }}/${{ matrix.image }}:sha-${GITHUB_SHA::7}"
           echo "Testing $image"
 
-          # Run image-specific tests if test.sh exists
           if [ -f "src/${{ matrix.image }}/test.sh" ]; then
             chmod +x src/${{ matrix.image }}/test.sh
             docker run --rm "$image" /bin/sh -c "$(cat src/${{ matrix.image }}/test.sh)"
           else
-            # Default: just verify image runs
             docker run --rm "$image" echo "Image runs successfully"
           fi
-
-  summary:
-    needs: [detect-changes, build, test]
-    if: always() && needs.detect-changes.outputs.images != '[]'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Summary
-        run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Images built: ${{ needs.detect-changes.outputs.images }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          for img in $(echo '${{ needs.detect-changes.outputs.images }}' | jq -r '.[]'); do
-            echo "| $img | ✅ |" >> $GITHUB_STEP_SUMMARY
-          done

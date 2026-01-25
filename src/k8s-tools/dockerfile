@@ -15,7 +15,7 @@
 #   - sops: Secrets encryption
 #   - age: Modern encryption tool
 
-FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+FROM --platform=$TARGETPLATFORM ghcr.io/labrats-work/infra.images/alpine-hardened:main
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
@@ -23,17 +23,17 @@ LABEL org.opencontainers.image.authors="tompisula@labrats.work"
 LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
 LABEL org.opencontainers.image.description="k8s-tools infrastructure image"
 
-ARG KUBECTL_VERSION="1.32.1"
+ARG KUBECTL_VERSION=1.32.1
 ENV KUBECTL_VERSION=${KUBECTL_VERSION}
-ARG HELM_VERSION="3.17.0"
+ARG HELM_VERSION=3.17.0
 ENV HELM_VERSION=${HELM_VERSION}
-ARG KUSTOMIZE_VERSION="5.6.0"
+ARG KUSTOMIZE_VERSION=5.6.0
 ENV KUSTOMIZE_VERSION=${KUSTOMIZE_VERSION}
-ARG FLUX_VERSION="2.5.1"
+ARG FLUX_VERSION=2.5.1
 ENV FLUX_VERSION=${FLUX_VERSION}
-ARG SOPS_VERSION="3.9.4"
+ARG SOPS_VERSION=3.9.4
 ENV SOPS_VERSION=${SOPS_VERSION}
-ARG AGE_VERSION="1.2.1"
+ARG AGE_VERSION=1.2.1
 ENV AGE_VERSION=${AGE_VERSION}
 
 # Install packages

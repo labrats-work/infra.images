@@ -64,6 +64,10 @@ def parse_yaml_simple(content: str) -> dict:
             key, value = stripped.split(':', 1)
             key = key.strip()
             value = value.strip()
+            # Strip YAML outer quotes
+            if (value.startswith("'") and value.endswith("'")) or \
+               (value.startswith('"') and value.endswith('"')):
+                value = value[1:-1]
 
             # Check if this is starting a list
             if value == '' and indent == 0:

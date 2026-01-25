@@ -15,7 +15,7 @@
 #   - actionlint: GitHub Actions workflow linter
 #   - yamllint: YAML linter
 
-FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+FROM --platform=$TARGETPLATFORM ghcr.io/labrats-work/infra.images/alpine-hardened:main
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
@@ -23,11 +23,11 @@ LABEL org.opencontainers.image.authors="tompisula@labrats.work"
 LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
 LABEL org.opencontainers.image.description="ci-tools infrastructure image"
 
-ARG SHELLCHECK_VERSION="0.10.0"
+ARG SHELLCHECK_VERSION=0.10.0
 ENV SHELLCHECK_VERSION=${SHELLCHECK_VERSION}
-ARG HADOLINT_VERSION="2.12.0"
+ARG HADOLINT_VERSION=2.12.0
 ENV HADOLINT_VERSION=${HADOLINT_VERSION}
-ARG ACTIONLINT_VERSION="1.7.7"
+ARG ACTIONLINT_VERSION=1.7.7
 ENV ACTIONLINT_VERSION=${ACTIONLINT_VERSION}
 
 # Install packages
@@ -50,7 +50,7 @@ RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="ar
     mv actionlint /usr/local/bin/
 
 # Install yamllint (YAML linter)
-RUN pip3 install --no-cache-dir yamllint
+RUN pip3 install --break-system-packages --no-cache-dir yamllint
 
 WORKDIR /app
 

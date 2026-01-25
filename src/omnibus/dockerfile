@@ -18,7 +18,7 @@
 #   - wireguard-tools-wg-quick: WireGuard quick scripts
 #   - terraform: Infrastructure as Code
 
-FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+FROM --platform=$TARGETPLATFORM ghcr.io/labrats-work/infra.images/alpine-hardened:main
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
@@ -26,7 +26,7 @@ LABEL org.opencontainers.image.authors="tompisula@labrats.work"
 LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
 LABEL org.opencontainers.image.description="omnibus infrastructure image"
 
-ARG TERRAFORM_VERSION="1.13.4"
+ARG TERRAFORM_VERSION=1.13.4
 ENV TERRAFORM_VERSION=${TERRAFORM_VERSION}
 
 # Install packages
@@ -40,5 +40,5 @@ RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="ar
 
 WORKDIR /app
 
-ENTRYPOINT '["/bin/sh", "-c"]'
+ENTRYPOINT ["/bin/sh", "-c"]
 CMD []
