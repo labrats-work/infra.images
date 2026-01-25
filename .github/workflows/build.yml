@@ -22,7 +22,7 @@ on:
         required: false
         type: string
       base_tag:
-        description: 'Base image tag for alpine-hardened (default: main)'
+        description: 'Base image tag override for hardened bases (default: main)'
         required: false
         type: string
 
@@ -38,21 +38,21 @@ env:
 # ======================================================================
 # Two modes:
 #   1. Orchestrator (push/PR/manual without images input):
-#      detect changes → build base → dispatch self with derived list
+#      detect changes → build base(s) → dispatch self with derived list
 #   2. Builder (dispatched with images input):
 #      build each image in parallel matrix → test each image
 # ======================================================================
 
 jobs:
   # ==================================================================
-  # ORCHESTRATOR MODE - detect changes, build base, dispatch derived
+  # ORCHESTRATOR MODE - detect changes, build base(s), dispatch derived
   # ==================================================================
 
   detect-changes:
     if: inputs.images == ''
     runs-on: ubuntu-latest
     outputs:
-      base_changed: ${{ steps.detect.outputs.base_changed }}
+      base_images: ${{ steps.detect.outputs.base_images }}
       derived_images: ${{ steps.detect.outputs.derived_images }}
     steps:
       - uses: actions/checkout@v4
@@ -81,8 +81,9 @@ jobs:
           fi
 
           if [ "$build_all" = "true" ]; then
-            echo "base_changed=true" >> $GITHUB_OUTPUT
-            derived=$(ls -d src/*/ | xargs -n1 basename | grep -v alpine-hardened | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            base_imgs=$(ls -d src/*-hardened/ 2>/dev/null | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            derived=$(ls -d src/*/ | xargs -n1 basename | grep -vE '.*-hardened$' | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            echo "base_images=$base_imgs" >> $GITHUB_OUTPUT
             echo "derived_images=$derived" >> $GITHUB_OUTPUT
           else
             # Check if generator or workflow changed
@@ -90,39 +91,44 @@ jobs:
               build_all=true
             fi
 
-            # Check if base image changed
-            if git diff --name-only $base HEAD | grep -q '^src/alpine-hardened/'; then
-              echo "base_changed=true" >> $GITHUB_OUTPUT
+            # Check if any base image changed
+            changed_bases=$(git diff --name-only $base HEAD | grep -E '^src/.*-hardened/' | cut -d'/' -f2 | sort -u)
+            if [ -n "$changed_bases" ]; then
               build_all=true
-            else
-              echo "base_changed=false" >> $GITHUB_OUTPUT
             fi
 
             if [ "$build_all" = "true" ]; then
-              derived=$(ls -d src/*/ | xargs -n1 basename | grep -v alpine-hardened | jq -R -s -c 'split("\n") | map(select(. != ""))')
+              base_imgs=$(ls -d src/*-hardened/ 2>/dev/null | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(. != ""))')
+              derived=$(ls -d src/*/ | xargs -n1 basename | grep -vE '.*-hardened$' | jq -R -s -c 'split("\n") | map(select(. != ""))')
             else
-              derived=$(git diff --name-only $base HEAD | grep '^src/' | cut -d'/' -f2 | sort -u | grep -v alpine-hardened | jq -R -s -c 'split("\n") | map(select(. != ""))')
+              base_imgs='[]'
+              derived=$(git diff --name-only $base HEAD | grep '^src/' | cut -d'/' -f2 | sort -u | grep -vE '.*-hardened$' | jq -R -s -c 'split("\n") | map(select(. != ""))')
             fi
+            echo "base_images=$base_imgs" >> $GITHUB_OUTPUT
             echo "derived_images=$derived" >> $GITHUB_OUTPUT
           fi
 
   build-base:
     needs: detect-changes
-    if: needs.detect-changes.outputs.base_changed == 'true'
+    if: needs.detect-changes.outputs.base_images != '[]'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.detect-changes.outputs.base_images) }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Generate Dockerfile
         run: |
-          python3 generate-dockerfile.py --image alpine-hardened
-          cat src/alpine-hardened/dockerfile
+          python3 generate-dockerfile.py --image ${{ matrix.image }}
+          cat src/${{ matrix.image }}/dockerfile
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY_PATH }}/alpine-hardened
+          images: ${{ env.REGISTRY_PATH }}/${{ matrix.image }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr,prefix=pr-
@@ -147,13 +153,13 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ./src/alpine-hardened
+          context: ./src/${{ matrix.image }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=alpine-hardened
-          cache-to: type=gha,scope=alpine-hardened,mode=max
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
 
   dispatch-derived:
     needs: [detect-changes, build-base]
@@ -167,7 +173,7 @@ jobs:
       - name: Compute base tag
         id: base
         run: |
-          if [ "${{ needs.detect-changes.outputs.base_changed }}" = "true" ]; then
+          if [ '${{ needs.detect-changes.outputs.base_images }}' != '[]' ]; then
             echo "tag=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           else
             echo "tag=main" >> $GITHUB_OUTPUT
@@ -226,8 +232,10 @@ jobs:
           # Resolve base image tag from dispatch input
           base_tag="${{ inputs.base_tag }}"
           if [ -n "$base_tag" ] && [ "$base_tag" != "main" ]; then
-            echo "Overriding alpine-hardened tag: main → $base_tag"
-            sed -i "s|alpine-hardened:main|alpine-hardened:${base_tag}|g" src/${{ matrix.image }}/dockerfile
+            echo "Overriding hardened base tags: main → $base_tag"
+            for base_name in $(ls -d src/*-hardened/ 2>/dev/null | xargs -n1 basename); do
+              sed -i "s|${base_name}:main|${base_name}:${base_tag}|g" src/${{ matrix.image }}/dockerfile
+            done
           fi
 
           echo "=== Dockerfile for ${{ matrix.image }} ==="
