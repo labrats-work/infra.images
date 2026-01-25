@@ -18,8 +18,7 @@ LABEL org.opencontainers.image.description="alpine-hardened infrastructure image
 RUN apk add --no-cache ca-certificates tzdata
 
 # Install hardening (CIS and DevSec security hardening)
-RUN apk del --purge apk-tools || true && \
-    sed -i 's|/bin/ash|/sbin/nologin|g' /etc/passwd && \
+RUN sed -i 's|/bin/ash|/sbin/nologin|g' /etc/passwd && \
     chmod 600 /etc/shadow && \
     chmod 644 /etc/passwd && \
     chmod 644 /etc/group && \

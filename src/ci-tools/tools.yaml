@@ -1,6 +1,6 @@
 # CI Tools Image Configuration
 # General CI/CD tools for linting, testing, and validation
-base: docker.io/alpine:3.22
+base: ghcr.io/labrats-work/infra.images/alpine-hardened:main
 package_manager: apk
 multi_arch: true
 workdir: /app
@@ -83,4 +83,4 @@ tools:
     description: YAML linter
     method: script
     script: |
-      pip3 install --no-cache-dir yamllint
+      pip3 install --break-system-packages --no-cache-dir yamllint

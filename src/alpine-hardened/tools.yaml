@@ -18,9 +18,6 @@ tools:
     description: CIS and DevSec security hardening
     method: script
     script: |
-      # Remove unnecessary packages and setuid binaries
-      apk del --purge apk-tools || true
-
       # Remove shells for system accounts
       sed -i 's|/bin/ash|/sbin/nologin|g' /etc/passwd
 

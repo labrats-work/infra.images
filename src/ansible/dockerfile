@@ -8,7 +8,7 @@
 #   - jq: JSON processor
 #   - yq: YAML processor
 
-FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+FROM --platform=$TARGETPLATFORM ghcr.io/labrats-work/infra.images/alpine-hardened:main
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
