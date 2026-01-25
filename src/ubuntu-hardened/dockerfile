@@ -47,7 +47,8 @@ RUN sed -i 's|/bin/bash|/usr/sbin/nologin|g' /etc/passwd && \
     echo "Ubuntu Hardened - $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/hardened-version
 
 # Install nonroot-user (Create non-root user for running applications)
-RUN groupadd -g 65532 nonroot && \
+RUN mkdir -p /app && \
+    groupadd -g 65532 nonroot && \
     useradd -u 65532 -g nonroot -d /app -s /usr/sbin/nologin -M nonroot && \
     chown -R nonroot:nonroot /app
 

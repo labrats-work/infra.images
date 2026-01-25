@@ -81,6 +81,7 @@ tools:
     description: Create non-root user for running applications
     method: script
     script: |
+      mkdir -p /app
       groupadd -g 65532 nonroot
       useradd -u 65532 -g nonroot -d /app -s /usr/sbin/nologin -M nonroot
       chown -R nonroot:nonroot /app
