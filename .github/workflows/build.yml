@@ -63,8 +63,11 @@ jobs:
         run: |
           build_all=false
 
-          # Tag push → build everything
+          # Tag push or PR → build everything
           if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" =~ ^refs/tags/ ]]; then
+            build_all=true
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
             build_all=true
           fi
 
