@@ -185,6 +185,7 @@ jobs:
           echo "  images:   $images"
 
           gh workflow run build.yml \
+            -R "${{ github.repository }}" \
             --ref "$ref" \
             -f images="$images" \
             -f base_tag="$base_tag"
