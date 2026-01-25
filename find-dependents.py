@@ -47,8 +47,8 @@ def scan_images(src: str) -> dict:
 
 
 def find_dependents(from_image: str, src: str) -> list:
-    """Return images whose base: contains /<from_image>:"""
-    needle = f"/{from_image}:"
+    """Return images whose base: references from_image in our registry."""
+    needle = f"{REGISTRY_PATH}{from_image}:"
     images = scan_images(src)
     return sorted(name for name, base in images.items() if needle in base)
 
