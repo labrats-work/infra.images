@@ -85,4 +85,4 @@ tools:
     description: YAML linter
     method: script
     script: |
-      pip3 install --no-cache-dir yamllint==${YAMLLINT_VERSION}
+      pip3 install --no-cache-dir yamllint

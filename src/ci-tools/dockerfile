@@ -52,7 +52,7 @@ RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="ar
     mv actionlint /usr/local/bin/
 
 # Install yamllint (YAML linter)
-RUN pip3 install --no-cache-dir yamllint==${YAMLLINT_VERSION}
+RUN pip3 install --no-cache-dir yamllint
 
 WORKDIR /app
 
