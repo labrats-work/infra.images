@@ -1,0 +1,25 @@
+# ansible Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - ansible: IT automation platform
+#   - git: Version control
+#   - openssh: SSH client
+#   - jq: JSON processor
+#   - yq: YAML processor
+
+FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="ansible infrastructure image"
+
+# Install packages
+RUN apk add --no-cache ansible git openssh jq yq
+
+WORKDIR /app
+
+ENTRYPOINT []
+CMD []

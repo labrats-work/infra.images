@@ -1,0 +1,54 @@
+# Terraform Image Configuration
+base: docker.io/alpine:3.22
+package_manager: apk
+multi_arch: true
+workdir: /app
+
+build_args:
+  - name: TERRAFORM_VERSION
+    default: "1.13.4"
+
+tools:
+  - name: curl
+    description: URL transfer tool
+    method: package
+    package: curl
+
+  - name: unzip
+    description: Archive extraction
+    method: package
+    package: unzip
+
+  - name: git
+    description: Version control
+    method: package
+    package: git
+
+  - name: openssh
+    description: SSH client
+    method: package
+    package: openssh
+
+  - name: jq
+    description: JSON processor
+    method: package
+    package: jq
+
+  - name: yq
+    description: YAML processor
+    method: package
+    package: yq
+
+  - name: xorriso
+    description: ISO image tool
+    method: package
+    package: xorriso
+
+  - name: terraform
+    description: Infrastructure as Code
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -LO https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip
+      unzip terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip -d /usr/local/bin
+      rm terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip

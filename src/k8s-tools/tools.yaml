@@ -1,0 +1,102 @@
+# Kubernetes Tools Image Configuration
+# kubectl, helm, kustomize, flux, sops, age for cluster management
+base: docker.io/alpine:3.22
+package_manager: apk
+multi_arch: true
+workdir: /app
+
+build_args:
+  - name: KUBECTL_VERSION
+    default: "1.32.1"
+  - name: HELM_VERSION
+    default: "3.17.0"
+  - name: KUSTOMIZE_VERSION
+    default: "5.6.0"
+  - name: FLUX_VERSION
+    default: "2.5.1"
+  - name: SOPS_VERSION
+    default: "3.9.4"
+  - name: AGE_VERSION
+    default: "1.2.1"
+
+tools:
+  - name: curl
+    description: URL transfer tool
+    method: package
+    package: curl
+
+  - name: bash
+    description: Bash shell
+    method: package
+    package: bash
+
+  - name: git
+    description: Version control
+    method: package
+    package: git
+
+  - name: openssh
+    description: SSH client
+    method: package
+    package: openssh
+
+  - name: jq
+    description: JSON processor
+    method: package
+    package: jq
+
+  - name: yq
+    description: YAML processor
+    method: package
+    package: yq
+
+  - name: kubectl
+    description: Kubernetes CLI
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl"
+      chmod +x kubectl
+      mv kubectl /usr/local/bin/
+
+  - name: helm
+    description: Kubernetes package manager
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${ARCH}.tar.gz" | tar xz
+      mv linux-${ARCH}/helm /usr/local/bin/
+      rm -rf linux-${ARCH}
+
+  - name: kustomize
+    description: Kubernetes configuration customization
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_${ARCH}.tar.gz" | tar xz
+      mv kustomize /usr/local/bin/
+
+  - name: flux
+    description: FluxCD GitOps toolkit
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -fsSL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_${ARCH}.tar.gz" | tar xz
+      mv flux /usr/local/bin/
+
+  - name: sops
+    description: Secrets encryption
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${ARCH}" -o /usr/local/bin/sops
+      chmod +x /usr/local/bin/sops
+
+  - name: age
+    description: Modern encryption tool
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -fsSL "https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-${ARCH}.tar.gz" | tar xz
+      mv age/age age/age-keygen /usr/local/bin/
+      rm -rf age

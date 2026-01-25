@@ -1,0 +1,60 @@
+# ci-tools Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - bash: Bash shell
+#   - curl: URL transfer tool
+#   - git: Version control
+#   - make: Build automation
+#   - jq: JSON processor
+#   - yq: YAML processor
+#   - python3: Python runtime
+#   - py3-pip: Python package manager
+#   - shellcheck: Shell script linter
+#   - hadolint: Dockerfile linter
+#   - actionlint: GitHub Actions workflow linter
+#   - yamllint: YAML linter
+
+FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="ci-tools infrastructure image"
+
+ARG SHELLCHECK_VERSION="0.10.0"
+ENV SHELLCHECK_VERSION=${SHELLCHECK_VERSION}
+ARG HADOLINT_VERSION="2.12.0"
+ENV HADOLINT_VERSION=${HADOLINT_VERSION}
+ARG ACTIONLINT_VERSION="1.7.7"
+ENV ACTIONLINT_VERSION=${ACTIONLINT_VERSION}
+ARG YAMLLINT_VERSION="1.35.1"
+ENV YAMLLINT_VERSION=${YAMLLINT_VERSION}
+
+# Install packages
+RUN apk add --no-cache bash curl git make jq yq python3 py3-pip
+
+# Install shellcheck (Shell script linter)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="x86_64"; else ARCH="aarch64"; fi && \
+    curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${ARCH}.tar.xz" | tar xJ && \
+    mv shellcheck-v${SHELLCHECK_VERSION}/shellcheck /usr/local/bin/ && \
+    rm -rf shellcheck-v${SHELLCHECK_VERSION}
+
+# Install hadolint (Dockerfile linter)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="x86_64"; else ARCH="arm64"; fi && \
+    curl -fsSL "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${ARCH}" -o /usr/local/bin/hadolint && \
+    chmod +x /usr/local/bin/hadolint
+
+# Install actionlint (GitHub Actions workflow linter)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${ARCH}.tar.gz" | tar xz && \
+    mv actionlint /usr/local/bin/
+
+# Install yamllint (YAML linter)
+RUN pip3 install --no-cache-dir yamllint==${YAMLLINT_VERSION}
+
+WORKDIR /app
+
+ENTRYPOINT []
+CMD []

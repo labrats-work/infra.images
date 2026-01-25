@@ -1,0 +1,44 @@
+# omnibus Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - python3: Python runtime
+#   - py3-pip: Python package manager
+#   - ansible: IT automation platform
+#   - curl: URL transfer tool
+#   - tar: Archive tool
+#   - unzip: Archive extraction
+#   - git: Version control
+#   - findutils: Find utilities
+#   - openssh: SSH client
+#   - jq: JSON processor
+#   - yq: YAML processor
+#   - iptables: Firewall management
+#   - wireguard-tools: WireGuard VPN tools
+#   - wireguard-tools-wg-quick: WireGuard quick scripts
+#   - terraform: Infrastructure as Code
+
+FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="omnibus infrastructure image"
+
+ARG TERRAFORM_VERSION="1.13.4"
+ENV TERRAFORM_VERSION=${TERRAFORM_VERSION}
+
+# Install packages
+RUN apk add --no-cache python3 py3-pip ansible curl tar unzip git findutils openssh jq yq iptables wireguard-tools wireguard-tools-wg-quick
+
+# Install terraform (Infrastructure as Code)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -LO https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip && \
+    unzip terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip -d /usr/local/bin && \
+    rm terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip
+
+WORKDIR /app
+
+ENTRYPOINT '["/bin/sh", "-c"]'
+CMD []

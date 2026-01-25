@@ -1,0 +1,26 @@
+# python Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - build-tools: Build essentials for compiling packages
+
+FROM --platform=$TARGETPLATFORM registry.hub.docker.com/library/python:3.12-slim-bookworm
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="python infrastructure image"
+
+# Install build-tools (Build essentials for compiling packages)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential gcc && \
+    pip3 install --no-cache-dir --upgrade pip && \
+    apt-get remove -y build-essential gcc && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+ENTRYPOINT []
+CMD []

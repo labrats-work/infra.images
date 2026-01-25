@@ -1,0 +1,78 @@
+# k8s-tools Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - curl: URL transfer tool
+#   - bash: Bash shell
+#   - git: Version control
+#   - openssh: SSH client
+#   - jq: JSON processor
+#   - yq: YAML processor
+#   - kubectl: Kubernetes CLI
+#   - helm: Kubernetes package manager
+#   - kustomize: Kubernetes configuration customization
+#   - flux: FluxCD GitOps toolkit
+#   - sops: Secrets encryption
+#   - age: Modern encryption tool
+
+FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="k8s-tools infrastructure image"
+
+ARG KUBECTL_VERSION="1.32.1"
+ENV KUBECTL_VERSION=${KUBECTL_VERSION}
+ARG HELM_VERSION="3.17.0"
+ENV HELM_VERSION=${HELM_VERSION}
+ARG KUSTOMIZE_VERSION="5.6.0"
+ENV KUSTOMIZE_VERSION=${KUSTOMIZE_VERSION}
+ARG FLUX_VERSION="2.5.1"
+ENV FLUX_VERSION=${FLUX_VERSION}
+ARG SOPS_VERSION="3.9.4"
+ENV SOPS_VERSION=${SOPS_VERSION}
+ARG AGE_VERSION="1.2.1"
+ENV AGE_VERSION=${AGE_VERSION}
+
+# Install packages
+RUN apk add --no-cache curl bash git openssh jq yq
+
+# Install kubectl (Kubernetes CLI)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/
+
+# Install helm (Kubernetes package manager)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${ARCH}.tar.gz" | tar xz && \
+    mv linux-${ARCH}/helm /usr/local/bin/ && \
+    rm -rf linux-${ARCH}
+
+# Install kustomize (Kubernetes configuration customization)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_${ARCH}.tar.gz" | tar xz && \
+    mv kustomize /usr/local/bin/
+
+# Install flux (FluxCD GitOps toolkit)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -fsSL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_${ARCH}.tar.gz" | tar xz && \
+    mv flux /usr/local/bin/
+
+# Install sops (Secrets encryption)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${ARCH}" -o /usr/local/bin/sops && \
+    chmod +x /usr/local/bin/sops
+
+# Install age (Modern encryption tool)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -fsSL "https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-${ARCH}.tar.gz" | tar xz && \
+    mv age/age age/age-keygen /usr/local/bin/ && \
+    rm -rf age
+
+WORKDIR /app
+
+ENTRYPOINT []
+CMD []

@@ -1,0 +1,55 @@
+# ARC Runner Image Configuration
+# GitHub Actions Runner Controller runner with DevOps tools
+base: ghcr.io/actions/actions-runner:latest
+package_manager: apt
+multi_arch: false
+user: runner
+
+tools:
+  - name: jq
+    description: JSON processor
+    method: package
+    package: jq
+
+  - name: gh
+    description: GitHub CLI
+    method: script
+    script: |
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+      chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+      apt-get update
+      apt-get install -y --no-install-recommends gh
+      rm -rf /var/lib/apt/lists/*
+
+  - name: node
+    description: Node.js runtime
+    method: script
+    script: |
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      apt-get update
+      apt-get install -y --no-install-recommends nodejs
+      rm -rf /var/lib/apt/lists/*
+
+  - name: yq
+    description: YAML processor
+    method: binary
+    url: https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+    dest: /usr/local/bin/yq
+
+  - name: podman
+    description: Container engine
+    method: script
+    script: |
+      apt-get update
+      apt-get install -y --no-install-recommends podman buildah skopeo fuse-overlayfs
+      ln -sf /usr/bin/podman /usr/local/bin/docker
+      mkdir -p /etc/containers
+      echo 'unqualified-search-registries = ["docker.io", "ghcr.io"]' > /etc/containers/registries.conf
+      rm -rf /var/lib/apt/lists/*
+
+  - name: claude
+    description: Claude Code CLI
+    method: script
+    script: |
+      npm install -g @anthropic-ai/claude-code

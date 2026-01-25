@@ -1,0 +1,31 @@
+# Ansible Image Configuration
+base: docker.io/alpine:3.22
+package_manager: apk
+multi_arch: true
+workdir: /app
+
+tools:
+  - name: ansible
+    description: IT automation platform
+    method: package
+    package: ansible
+
+  - name: git
+    description: Version control
+    method: package
+    package: git
+
+  - name: openssh
+    description: SSH client
+    method: package
+    package: openssh
+
+  - name: jq
+    description: JSON processor
+    method: package
+    package: jq
+
+  - name: yq
+    description: YAML processor
+    method: package
+    package: yq

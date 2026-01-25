@@ -1,0 +1,37 @@
+# terraform Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - curl: URL transfer tool
+#   - unzip: Archive extraction
+#   - git: Version control
+#   - openssh: SSH client
+#   - jq: JSON processor
+#   - yq: YAML processor
+#   - xorriso: ISO image tool
+#   - terraform: Infrastructure as Code
+
+FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="terraform infrastructure image"
+
+ARG TERRAFORM_VERSION="1.13.4"
+ENV TERRAFORM_VERSION=${TERRAFORM_VERSION}
+
+# Install packages
+RUN apk add --no-cache curl unzip git openssh jq yq xorriso
+
+# Install terraform (Infrastructure as Code)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -LO https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip && \
+    unzip terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip -d /usr/local/bin && \
+    rm terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip
+
+WORKDIR /app
+
+ENTRYPOINT []
+CMD []

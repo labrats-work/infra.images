@@ -1,0 +1,59 @@
+# arc-runner Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - jq: JSON processor
+#   - gh: GitHub CLI
+#   - node: Node.js runtime
+#   - yq: YAML processor
+#   - podman: Container engine
+#   - claude: Claude Code CLI
+
+FROM ghcr.io/actions/actions-runner:latest
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="arc-runner infrastructure image"
+
+USER root
+
+# Install packages
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends jq && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install yq (YAML processor)
+RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -o /usr/local/bin/yq && \
+    chmod +x /usr/local/bin/yq
+
+# Install gh (GitHub CLI)
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends gh && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install node (Node.js runtime)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install podman (Container engine)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends podman buildah skopeo fuse-overlayfs && \
+    ln -sf /usr/bin/podman /usr/local/bin/docker && \
+    mkdir -p /etc/containers && \
+    echo 'unqualified-search-registries = ["docker.io", "ghcr.io"]' > /etc/containers/registries.conf && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install claude (Claude Code CLI)
+RUN npm install -g @anthropic-ai/claude-code
+
+WORKDIR /app
+
+USER runner
+
+ENTRYPOINT []
+CMD []

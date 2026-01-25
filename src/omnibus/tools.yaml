@@ -1,0 +1,91 @@
+# Omnibus Image Configuration
+# All-in-one operations image with Ansible, Terraform, Python, and networking tools
+base: docker.io/alpine:3.22
+package_manager: apk
+multi_arch: true
+workdir: /app
+entrypoint: '["/bin/sh", "-c"]'
+
+build_args:
+  - name: TERRAFORM_VERSION
+    default: "1.13.4"
+
+tools:
+  - name: python3
+    description: Python runtime
+    method: package
+    package: python3
+
+  - name: py3-pip
+    description: Python package manager
+    method: package
+    package: py3-pip
+
+  - name: ansible
+    description: IT automation platform
+    method: package
+    package: ansible
+
+  - name: curl
+    description: URL transfer tool
+    method: package
+    package: curl
+
+  - name: tar
+    description: Archive tool
+    method: package
+    package: tar
+
+  - name: unzip
+    description: Archive extraction
+    method: package
+    package: unzip
+
+  - name: git
+    description: Version control
+    method: package
+    package: git
+
+  - name: findutils
+    description: Find utilities
+    method: package
+    package: findutils
+
+  - name: openssh
+    description: SSH client
+    method: package
+    package: openssh
+
+  - name: jq
+    description: JSON processor
+    method: package
+    package: jq
+
+  - name: yq
+    description: YAML processor
+    method: package
+    package: yq
+
+  - name: iptables
+    description: Firewall management
+    method: package
+    package: iptables
+
+  - name: wireguard-tools
+    description: WireGuard VPN tools
+    method: package
+    package: wireguard-tools
+
+  - name: wireguard-tools-wg-quick
+    description: WireGuard quick scripts
+    method: package
+    package: wireguard-tools-wg-quick
+
+  - name: terraform
+    description: Infrastructure as Code
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -LO https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip
+      unzip terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip -d /usr/local/bin
+      rm terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip

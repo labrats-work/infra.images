@@ -1,0 +1,88 @@
+# CI Tools Image Configuration
+# General CI/CD tools for linting, testing, and validation
+base: docker.io/alpine:3.22
+package_manager: apk
+multi_arch: true
+workdir: /app
+
+build_args:
+  - name: SHELLCHECK_VERSION
+    default: "0.10.0"
+  - name: HADOLINT_VERSION
+    default: "2.12.0"
+  - name: ACTIONLINT_VERSION
+    default: "1.7.7"
+  - name: YAMLLINT_VERSION
+    default: "1.35.1"
+
+tools:
+  - name: bash
+    description: Bash shell
+    method: package
+    package: bash
+
+  - name: curl
+    description: URL transfer tool
+    method: package
+    package: curl
+
+  - name: git
+    description: Version control
+    method: package
+    package: git
+
+  - name: make
+    description: Build automation
+    method: package
+    package: make
+
+  - name: jq
+    description: JSON processor
+    method: package
+    package: jq
+
+  - name: yq
+    description: YAML processor
+    method: package
+    package: yq
+
+  - name: python3
+    description: Python runtime
+    method: package
+    package: python3
+
+  - name: py3-pip
+    description: Python package manager
+    method: package
+    package: py3-pip
+
+  - name: shellcheck
+    description: Shell script linter
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="x86_64"; else ARCH="aarch64"; fi
+      curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${ARCH}.tar.xz" | tar xJ
+      mv shellcheck-v${SHELLCHECK_VERSION}/shellcheck /usr/local/bin/
+      rm -rf shellcheck-v${SHELLCHECK_VERSION}
+
+  - name: hadolint
+    description: Dockerfile linter
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="x86_64"; else ARCH="arm64"; fi
+      curl -fsSL "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${ARCH}" -o /usr/local/bin/hadolint
+      chmod +x /usr/local/bin/hadolint
+
+  - name: actionlint
+    description: GitHub Actions workflow linter
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${ARCH}.tar.gz" | tar xz
+      mv actionlint /usr/local/bin/
+
+  - name: yamllint
+    description: YAML linter
+    method: script
+    script: |
+      pip3 install --no-cache-dir yamllint==${YAMLLINT_VERSION}
