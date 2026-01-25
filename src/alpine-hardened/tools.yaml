@@ -26,9 +26,11 @@ tools:
       chmod 644 /etc/passwd
       chmod 644 /etc/group
 
-      # Remove world-writable permissions
+      # Remove world-writable permissions on files
       find / -xdev -type f -perm -0002 -exec chmod o-w {} \; 2>/dev/null || true
-      find / -xdev -type d -perm -0002 -exec chmod o-w {} \; 2>/dev/null || true
+
+      # Set sticky bit on world-writable directories
+      find / -xdev -type d -perm -0002 ! -perm -1000 -exec chmod +t {} \; 2>/dev/null || true
 
       # Remove SUID/SGID binaries (security risk)
       find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} \; 2>/dev/null || true
@@ -43,6 +45,25 @@ tools:
 
       # Restrict cron (if present)
       rm -rf /etc/cron.* /var/spool/cron 2>/dev/null || true
+
+      # Remove legacy auth files
+      find / -xdev -name '.netrc' -o -name '.rhosts' -o -name '.forward' | xargs rm -f 2>/dev/null || true
+
+      # Empty securetty to prevent root console login
+      echo "" > /etc/securetty 2>/dev/null || true
+
+      # Disable core dumps
+      mkdir -p /etc/security/limits.d
+      echo "* hard core 0" > /etc/security/limits.d/99-no-core-dumps.conf
+
+      # Set restrictive umask
+      echo "umask 027" >> /etc/profile
+
+      # Remove SSH host keys (should be generated at runtime)
+      rm -f /etc/ssh/ssh_host_*key* 2>/dev/null || true
+
+      # Restrict gshadow if present
+      chmod 600 /etc/gshadow 2>/dev/null || true
 
       # Remove temp files
       rm -rf /tmp/* /var/tmp/* /var/cache/apk/*
