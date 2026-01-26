@@ -50,7 +50,7 @@ tools:
   - name: desktop-apps
     description: Common desktop applications
     method: package
-    package: firefox xfce4-screenshooter mousepad file-roller
+    package: xfce4-screenshooter mousepad file-roller
 
   - name: desktop-user
     description: Create desktop user with sudo access

@@ -22,7 +22,7 @@ ENV VNC_RESOLUTION=${VNC_RESOLUTION}
 
 # Install packages
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl wget git sudo locales firefox xfce4-screenshooter mousepad file-roller && \
+    apt-get install -y --no-install-recommends curl wget git sudo locales xfce4-screenshooter mousepad file-roller && \
     rm -rf /var/lib/apt/lists/*
 
 # Install locale-setup (Configure UTF-8 locale)
