@@ -1,8 +1,8 @@
 name: build-images
 run-name: >-
   ${{ inputs.from_image
-    && format('build-images ← {0} (run {1})', inputs.from_image, github.run_id)
-    || format('build-images (run {0})', github.run_id) }}
+    && format('[{0}] build-images ← {1}', github.run_id, inputs.from_image)
+    || format('[{0}] build-images', github.run_id) }}
 
 on:
   push:
