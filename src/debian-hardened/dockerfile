@@ -1,4 +1,4 @@
-# alpine-hardened Image
+# debian-hardened Image
 # AUTO-GENERATED from tools.yaml - do not edit directly!
 #
 # Tools included:
@@ -6,31 +6,35 @@
 #   - hardening: CIS and DevSec security hardening
 #   - nonroot-user: Create non-root user for running applications
 
-FROM --platform=$TARGETPLATFORM docker.io/alpine:3.22
+FROM --platform=$TARGETPLATFORM docker.io/debian:12-slim
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
 LABEL org.opencontainers.image.authors="tompisula@labrats.work"
 LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
-LABEL org.opencontainers.image.description="alpine-hardened infrastructure image"
+LABEL org.opencontainers.image.description="debian-hardened infrastructure image"
 
 # Install security-base (Security baseline packages)
-RUN apk add --no-cache ca-certificates tzdata
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates tzdata && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install hardening (CIS and DevSec security hardening)
-RUN sed -i 's|/bin/ash|/sbin/nologin|g' /etc/passwd && \
+RUN sed -i 's|/bin/bash|/usr/sbin/nologin|g' /etc/passwd && \
+    sed -i 's|/bin/sh|/usr/sbin/nologin|g' /etc/passwd && \
+    sed -i '/^root:/s|/usr/sbin/nologin|/bin/sh|' /etc/passwd && \
     chmod 600 /etc/shadow && \
     chmod 644 /etc/passwd && \
     chmod 644 /etc/group && \
     find / -xdev -type f -perm -0002 -exec chmod o-w {} \; 2>/dev/null || true && \
     find / -xdev -type d -perm -0002 ! -perm -1000 -exec chmod +t {} \; 2>/dev/null || true && \
     find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} \; 2>/dev/null || true && \
-    deluser games 2>/dev/null || true && \
-    deluser news 2>/dev/null || true && \
-    deluser uucp 2>/dev/null || true && \
-    deluser operator 2>/dev/null || true && \
-    deluser list 2>/dev/null || true && \
-    deluser irc 2>/dev/null || true && \
+    deluser --remove-home games 2>/dev/null || true && \
+    deluser --remove-home news 2>/dev/null || true && \
+    deluser --remove-home uucp 2>/dev/null || true && \
+    deluser --remove-home list 2>/dev/null || true && \
+    deluser --remove-home irc 2>/dev/null || true && \
+    deluser --remove-home gnats 2>/dev/null || true && \
     rm -rf /etc/cron.* /var/spool/cron 2>/dev/null || true && \
     find / -xdev -name '.netrc' -o -name '.rhosts' -o -name '.forward' | xargs rm -f 2>/dev/null || true && \
     echo "" > /etc/securetty 2>/dev/null || true && \
@@ -39,12 +43,13 @@ RUN sed -i 's|/bin/ash|/sbin/nologin|g' /etc/passwd && \
     echo "umask 027" >> /etc/profile && \
     rm -f /etc/ssh/ssh_host_*key* 2>/dev/null || true && \
     chmod 600 /etc/gshadow 2>/dev/null || true && \
-    rm -rf /tmp/* /var/tmp/* /var/cache/apk/* && \
-    echo "Alpine Hardened - $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/hardened-version
+    rm -rf /tmp/* /var/tmp/* /var/lib/apt/lists/* /var/cache/apt/* && \
+    echo "Debian Hardened - $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/hardened-version
 
 # Install nonroot-user (Create non-root user for running applications)
-RUN addgroup -g 65532 -S nonroot && \
-    adduser -u 65532 -S -G nonroot -h /app -s /sbin/nologin nonroot && \
+RUN mkdir -p /app && \
+    groupadd -g 65532 nonroot && \
+    useradd -u 65532 -g nonroot -d /app -s /usr/sbin/nologin -M nonroot && \
     chown -R nonroot:nonroot /app
 
 WORKDIR /app

@@ -1,0 +1,30 @@
+# Ubuntu Server Image Configuration
+# General-purpose server image with common DevOps tools
+base: ghcr.io/labrats-work/infra.images/ubuntu-hardened:main
+package_manager: apt
+multi_arch: true
+workdir: /app
+
+tools:
+  - name: core-utils
+    description: Core server utilities
+    method: package
+    package: curl wget git openssh-client jq sudo
+
+  - name: yq
+    description: YAML processor
+    method: script
+    script: |
+      if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi
+      curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}" -o /usr/local/bin/yq
+      chmod +x /usr/local/bin/yq
+
+  - name: net-tools
+    description: Network diagnostic tools
+    method: package
+    package: iputils-ping dnsutils netcat-openbsd iproute2
+
+  - name: editors
+    description: Terminal editors
+    method: package
+    package: vim-tiny nano
