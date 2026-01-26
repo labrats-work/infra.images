@@ -1,4 +1,8 @@
 name: build-images
+run-name: >-
+  ${{ inputs.from_image
+    && format('build-images ← {0}', inputs.from_image)
+    || 'build-images' }}
 
 on:
   push:
@@ -271,7 +275,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Dispatch dependent builds
+      - name: Dispatch dependent builds and wait
         run: |
           roots='${{ needs.detect-changes.outputs.root_images }}'
           tag="sha-${GITHUB_SHA::7}"
@@ -282,6 +286,10 @@ jobs:
           echo "  tag:   $tag"
           echo "  ref:   $ref"
 
+          # Record baseline so we can find newly created runs
+          baseline_id=$(gh run list --workflow=build.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+          dispatched=0
+
           for root in $(echo "$roots" | jq -r '.[]'); do
             dependents=$(python3 find-dependents.py --from-image "$root")
             echo "  $root dependents: $dependents"
@@ -291,8 +299,31 @@ jobs:
                 -R "${{ github.repository }}" \
                 --ref "$ref" \
                 -f from_image="${root}:${tag}"
+              dispatched=$((dispatched + 1))
             fi
           done
+
+          if [ "$dispatched" -gt 0 ]; then
+            echo "=== Waiting for $dispatched dispatched run(s) to appear ==="
+            for attempt in $(seq 1 60); do
+              sleep 3
+              new_count=$(gh run list --workflow=build.yml --json databaseId \
+                --jq "[.[] | select(.databaseId > $baseline_id)] | length")
+              if [ "$new_count" -ge "$dispatched" ]; then
+                break
+              fi
+              echo "  Waiting for runs to register ($new_count/$dispatched)..."
+            done
+
+            run_ids=$(gh run list --workflow=build.yml --json databaseId \
+              --jq "[.[] | select(.databaseId > $baseline_id)] | .[].databaseId")
+
+            echo "=== Waiting for dispatched runs to complete ==="
+            for run_id in $run_ids; do
+              echo "  Watching run $run_id..."
+              gh run watch "$run_id" --exit-status
+            done
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -441,13 +472,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Dispatch next level
+      - name: Dispatch next level and wait
         run: |
           images='${{ needs.resolve-dependents.outputs.images }}'
           tag="sha-${GITHUB_SHA::7}"
           ref='${{ github.head_ref || github.ref_name }}'
 
           echo "=== Dispatch next level ==="
+
+          # Record baseline so we can find newly created runs
+          baseline_id=$(gh run list --workflow=build.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+          dispatched=0
+
           for image in $(echo "$images" | jq -r '.[]'); do
             dependents=$(python3 find-dependents.py --from-image "$image")
             echo "  $image dependents: $dependents"
@@ -457,7 +493,30 @@ jobs:
                 -R "${{ github.repository }}" \
                 --ref "$ref" \
                 -f from_image="${image}:${tag}"
+              dispatched=$((dispatched + 1))
             fi
           done
+
+          if [ "$dispatched" -gt 0 ]; then
+            echo "=== Waiting for $dispatched dispatched run(s) to appear ==="
+            for attempt in $(seq 1 60); do
+              sleep 3
+              new_count=$(gh run list --workflow=build.yml --json databaseId \
+                --jq "[.[] | select(.databaseId > $baseline_id)] | length")
+              if [ "$new_count" -ge "$dispatched" ]; then
+                break
+              fi
+              echo "  Waiting for runs to register ($new_count/$dispatched)..."
+            done
+
+            run_ids=$(gh run list --workflow=build.yml --json databaseId \
+              --jq "[.[] | select(.databaseId > $baseline_id)] | .[].databaseId")
+
+            echo "=== Waiting for dispatched runs to complete ==="
+            for run_id in $run_ids; do
+              echo "  Watching run $run_id..."
+              gh run watch "$run_id" --exit-status
+            done
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
