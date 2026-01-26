@@ -40,15 +40,16 @@ env:
 # ======================================================================
 # Two modes:
 #   1. Orchestrator (push/PR/manual without from_image):
-#      detect changes → build roots → dispatch dependents
-#      also builds changed derived images that don't depend on rebuilt roots
+#      detect changes → build each root (test + dispatch its dependents)
+#      also builds changed derived images not covered by root rebuilds
 #   2. Recursive (dispatched with from_image):
-#      resolve dependents → build → test → dispatch next level
+#      resolve dependents → build each (test + dispatch its dependents)
+#      each image dispatches its own subtree and waits for completion
 # ======================================================================
 
 jobs:
   # ==================================================================
-  # ORCHESTRATOR MODE - detect changes, build roots, dispatch dependents
+  # ORCHESTRATOR MODE - detect changes, build roots
   # ==================================================================
 
   detect-changes:
@@ -117,7 +118,7 @@ jobs:
             done
 
             # Remove derived images that are dependents of changed roots
-            # (they will be built via dispatch-dependents instead)
+            # (they will be built via dispatch from the root's build job)
             for root in $(echo "$changed_roots" | jq -r '.[]'); do
               dependents=$(python3 find-dependents.py --from-image "$root")
               for dep in $(echo "$dependents" | jq -r '.[]'); do
@@ -194,6 +195,61 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
 
+      - name: Test image
+        run: |
+          image="${{ env.REGISTRY_PATH }}/${{ matrix.image }}:sha-${GITHUB_SHA::7}"
+          echo "Testing $image"
+          if [ -f "src/${{ matrix.image }}/test.sh" ]; then
+            chmod +x src/${{ matrix.image }}/test.sh
+            docker run --rm "$image" /bin/sh -c "$(cat src/${{ matrix.image }}/test.sh)"
+          else
+            docker run --rm "$image" echo "Image runs successfully"
+          fi
+
+      - name: Dispatch dependents and wait
+        run: |
+          image="${{ matrix.image }}"
+          tag="sha-${GITHUB_SHA::7}"
+          ref="${{ github.head_ref || github.ref_name }}"
+          from_image="${image}:${tag}"
+
+          dependents=$(python3 find-dependents.py --from-image "$image")
+          echo "$image dependents: $dependents"
+
+          if [ "$dependents" = "[]" ]; then
+            echo "No dependents, done"
+            exit 0
+          fi
+
+          baseline_id=$(gh run list --workflow=build.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+
+          echo "→ Dispatching from_image=${from_image}"
+          gh workflow run build.yml \
+            -R "${{ github.repository }}" \
+            --ref "$ref" \
+            -f from_image="${from_image}"
+
+          echo "Waiting for dispatched run to appear..."
+          run_id=""
+          for attempt in $(seq 1 60); do
+            sleep 3
+            run_id=$(gh run list --workflow=build.yml --json databaseId,name \
+              --jq "[.[] | select(.databaseId > $baseline_id) | select(.name | contains(\"← ${from_image}\"))] | .[0].databaseId // empty")
+            if [ -n "$run_id" ]; then
+              break
+            fi
+          done
+
+          if [ -z "$run_id" ]; then
+            echo "ERROR: Dispatched run not found"
+            exit 1
+          fi
+
+          echo "Watching run $run_id..."
+          gh run watch "$run_id" --exit-status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-changed-derived:
     needs: [detect-changes, build-roots]
     if: |
@@ -264,68 +320,16 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
 
-  dispatch-dependents:
-    needs: [detect-changes, build-roots]
-    if: |
-      always() &&
-      needs.detect-changes.result == 'success' &&
-      needs.build-roots.result == 'success' &&
-      needs.detect-changes.outputs.root_images != '[]'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Dispatch dependent builds and wait
+      - name: Test image
         run: |
-          roots='${{ needs.detect-changes.outputs.root_images }}'
-          tag="sha-${GITHUB_SHA::7}"
-          ref='${{ github.head_ref || github.ref_name }}'
-
-          echo "=== Dispatching dependents ==="
-          echo "  roots: $roots"
-          echo "  tag:   $tag"
-          echo "  ref:   $ref"
-
-          # Record baseline so we can find newly created runs
-          baseline_id=$(gh run list --workflow=build.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
-          dispatched=0
-
-          for root in $(echo "$roots" | jq -r '.[]'); do
-            dependents=$(python3 find-dependents.py --from-image "$root")
-            echo "  $root dependents: $dependents"
-            if [ "$dependents" != "[]" ]; then
-              echo "  → Dispatching from_image=${root}:${tag}"
-              gh workflow run build.yml \
-                -R "${{ github.repository }}" \
-                --ref "$ref" \
-                -f from_image="${root}:${tag}"
-              dispatched=$((dispatched + 1))
-            fi
-          done
-
-          if [ "$dispatched" -gt 0 ]; then
-            echo "=== Waiting for $dispatched dispatched run(s) to appear ==="
-            for attempt in $(seq 1 60); do
-              sleep 3
-              new_count=$(gh run list --workflow=build.yml --json databaseId \
-                --jq "[.[] | select(.databaseId > $baseline_id)] | length")
-              if [ "$new_count" -ge "$dispatched" ]; then
-                break
-              fi
-              echo "  Waiting for runs to register ($new_count/$dispatched)..."
-            done
-
-            run_ids=$(gh run list --workflow=build.yml --json databaseId \
-              --jq "[.[] | select(.databaseId > $baseline_id)] | .[].databaseId")
-
-            echo "=== Waiting for dispatched runs to complete ==="
-            for run_id in $run_ids; do
-              echo "  Watching run $run_id..."
-              gh run watch "$run_id" --exit-status
-            done
+          image="${{ env.REGISTRY_PATH }}/${{ matrix.image }}:sha-${GITHUB_SHA::7}"
+          echo "Testing $image"
+          if [ -f "src/${{ matrix.image }}/test.sh" ]; then
+            chmod +x src/${{ matrix.image }}/test.sh
+            docker run --rm "$image" /bin/sh -c "$(cat src/${{ matrix.image }}/test.sh)"
+          else
+            docker run --rm "$image" echo "Image runs successfully"
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==================================================================
   # RECURSIVE MODE - from_image provided, build dependents and recurse
@@ -431,29 +435,10 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
 
-  test-image:
-    needs: [resolve-dependents, build-image]
-    if: needs.resolve-dependents.outputs.images != '[]'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        image: ${{ fromJson(needs.resolve-dependents.outputs.images) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Test image
         run: |
           image="${{ env.REGISTRY_PATH }}/${{ matrix.image }}:sha-${GITHUB_SHA::7}"
           echo "Testing $image"
-
           if [ -f "src/${{ matrix.image }}/test.sh" ]; then
             chmod +x src/${{ matrix.image }}/test.sh
             docker run --rm "$image" /bin/sh -c "$(cat src/${{ matrix.image }}/test.sh)"
@@ -461,62 +446,46 @@ jobs:
             docker run --rm "$image" echo "Image runs successfully"
           fi
 
-  dispatch-next:
-    needs: [resolve-dependents, build-image, test-image]
-    if: |
-      needs.resolve-dependents.result == 'success' &&
-      needs.build-image.result == 'success' &&
-      needs.test-image.result == 'success' &&
-      needs.resolve-dependents.outputs.images != '[]'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Dispatch next level and wait
+      - name: Dispatch dependents and wait
         run: |
-          images='${{ needs.resolve-dependents.outputs.images }}'
+          image="${{ matrix.image }}"
           tag="sha-${GITHUB_SHA::7}"
-          ref='${{ github.head_ref || github.ref_name }}'
+          ref="${{ github.head_ref || github.ref_name }}"
+          from_image="${image}:${tag}"
 
-          echo "=== Dispatch next level ==="
+          dependents=$(python3 find-dependents.py --from-image "$image")
+          echo "$image dependents: $dependents"
 
-          # Record baseline so we can find newly created runs
+          if [ "$dependents" = "[]" ]; then
+            echo "No dependents, done"
+            exit 0
+          fi
+
           baseline_id=$(gh run list --workflow=build.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
-          dispatched=0
 
-          for image in $(echo "$images" | jq -r '.[]'); do
-            dependents=$(python3 find-dependents.py --from-image "$image")
-            echo "  $image dependents: $dependents"
-            if [ "$dependents" != "[]" ]; then
-              echo "  → Dispatching from_image=${image}:${tag}"
-              gh workflow run build.yml \
-                -R "${{ github.repository }}" \
-                --ref "$ref" \
-                -f from_image="${image}:${tag}"
-              dispatched=$((dispatched + 1))
+          echo "→ Dispatching from_image=${from_image}"
+          gh workflow run build.yml \
+            -R "${{ github.repository }}" \
+            --ref "$ref" \
+            -f from_image="${from_image}"
+
+          echo "Waiting for dispatched run to appear..."
+          run_id=""
+          for attempt in $(seq 1 60); do
+            sleep 3
+            run_id=$(gh run list --workflow=build.yml --json databaseId,name \
+              --jq "[.[] | select(.databaseId > $baseline_id) | select(.name | contains(\"← ${from_image}\"))] | .[0].databaseId // empty")
+            if [ -n "$run_id" ]; then
+              break
             fi
           done
 
-          if [ "$dispatched" -gt 0 ]; then
-            echo "=== Waiting for $dispatched dispatched run(s) to appear ==="
-            for attempt in $(seq 1 60); do
-              sleep 3
-              new_count=$(gh run list --workflow=build.yml --json databaseId \
-                --jq "[.[] | select(.databaseId > $baseline_id)] | length")
-              if [ "$new_count" -ge "$dispatched" ]; then
-                break
-              fi
-              echo "  Waiting for runs to register ($new_count/$dispatched)..."
-            done
-
-            run_ids=$(gh run list --workflow=build.yml --json databaseId \
-              --jq "[.[] | select(.databaseId > $baseline_id)] | .[].databaseId")
-
-            echo "=== Waiting for dispatched runs to complete ==="
-            for run_id in $run_ids; do
-              echo "  Watching run $run_id..."
-              gh run watch "$run_id" --exit-status
-            done
+          if [ -z "$run_id" ]; then
+            echo "ERROR: Dispatched run not found"
+            exit 1
           fi
+
+          echo "Watching run $run_id..."
+          gh run watch "$run_id" --exit-status
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
