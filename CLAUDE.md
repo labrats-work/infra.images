@@ -11,13 +11,14 @@ Infrastructure container images with declarative tool management via `tools.yaml
 ```
 infra.images/
 ├── generate-dockerfile.py    # Generates dockerfile from tools.yaml
+├── find-dependents.py        # Dependency resolver for recursive builds
 ├── src/
 │   └── <image>/
 │       ├── tools.yaml        # Declarative tool definitions
 │       ├── dockerfile        # Auto-generated (do not edit)
 │       └── test.sh           # Optional test script
 └── .github/workflows/
-    └── build.yml             # Unified matrix build workflow
+    └── build.yml             # Recursive dependency-driven build workflow
 ```
 
 ## Key Concepts
@@ -53,13 +54,29 @@ tools:
       unzip ...
 ```
 
-### Build Process
+### Recursive Build System
 
-1. Workflow detects which `src/*/tools.yaml` changed
-2. Runs `generate-dockerfile.py` to create dockerfile
-3. Builds images in parallel (matrix strategy)
-4. Multi-arch images use QEMU emulation
-5. Pushes to GHCR with semantic version tags
+The CI workflow (`build.yml`) uses a dependency-driven recursive build:
+
+1. **Orchestrator mode** (push/PR/tag): `detect-changes` identifies root images to build, then `build-roots` builds them in a matrix
+2. **Per-image dispatch**: After each root image is built+pushed+tested, it runs `find-dependents.py --from-image <name>` to find dependents
+3. **Recursive dispatch**: If dependents exist, `gh workflow run build.yml -f from_image=<name>:<sha-tag>` dispatches a child workflow
+4. **Child workflow**: Resolves dependents, builds them in a matrix, and each job dispatches its own dependents (recurse)
+5. **Wait-for-completion**: Parent jobs block until child workflows finish, propagating failures upward
+
+Key scripts:
+- `find-dependents.py --from-image <name>` — returns JSON array of images whose `base:` references `<name>`
+- `find-dependents.py --roots` — returns images with external bases (not from this repo's registry)
+
+### Image Dependency Tree
+
+Root images have external bases. Derived images reference this repo's registry (`ghcr.io/labrats-work/infra.images/<name>:main`).
+
+- `alpine:3.22` → `alpine-hardened` → ansible, ci-tools, k8s-tools, omnibus, terraform
+- `ubuntu:24.04` → `ubuntu-hardened` → ubuntu-server, ubuntu-workstation
+- `debian:12-slim` → `debian-hardened`
+- `python:3.12-slim` → python, python-ffmpeg
+- `actions-runner:latest` → arc-runner
 
 ## Common Operations
 
@@ -83,48 +100,44 @@ git push
 ### Create New Image
 
 ```bash
-# Create directory
 mkdir src/myimage
-
-# Create tools.yaml
-cat > src/myimage/tools.yaml << 'EOF'
-base: docker.io/alpine:3.22
-package_manager: apk
-multi_arch: true
-workdir: /app
-
-tools:
-  - name: mytool
-    method: package
-    package: mytool
-EOF
-
-# Optional: add test script
-cat > src/myimage/test.sh << 'EOF'
-#!/bin/sh
-set -e
-mytool --version
-EOF
-
-# Commit
+# Create src/myimage/tools.yaml with base, package_manager, tools
+# Optionally create src/myimage/test.sh
 git add src/myimage
 git commit -m "feat: add myimage"
 git push
 ```
 
+To create a **derived** image, set the base to an image from this repo:
+```yaml
+base: ghcr.io/labrats-work/infra.images/alpine-hardened:main
+```
+
+The build system detects the dependency automatically via `find-dependents.py`.
+
 ### Create Release
 
 ```bash
-# Create semantic version tag (no v prefix)
 git tag 1.1.0
 git push origin 1.1.0
 ```
 
-### Generate Dockerfile Locally
+### Local Development
 
 ```bash
+# Generate dockerfile
 python3 generate-dockerfile.py --image ansible
 cat src/ansible/dockerfile
+
+# Build locally
+docker build -t ansible:local src/ansible
+
+# Test
+docker run --rm ansible:local ansible --version
+
+# Check dependency tree
+python3 find-dependents.py --roots
+python3 find-dependents.py --from-image alpine-hardened
 ```
 
 ## Versioning
@@ -135,16 +148,21 @@ cat src/ansible/dockerfile
 
 ## Images Reference
 
-| Image | Purpose | Key Tools |
-|-------|---------|-----------|
-| ansible | Configuration management | ansible, git, ssh, jq, yq |
-| terraform | Infrastructure provisioning | terraform, git, jq, yq |
-| python | Python applications | python3, pip |
-| python-ffmpeg | Media processing | python3, pip, ffmpeg |
-| omnibus | All-in-one operations | ansible, terraform, python, wireguard |
-| k8s-tools | Kubernetes management | kubectl, helm, kustomize, flux, sops |
-| ci-tools | CI/CD linting | shellcheck, hadolint, actionlint |
-| arc-runner | GitHub Actions runner | gh, node, podman, claude |
+| Image | Purpose | Base | Key Tools |
+|-------|---------|------|-----------|
+| alpine-hardened | Security-hardened Alpine base | alpine:3.22 | hardening scripts |
+| debian-hardened | Security-hardened Debian base | debian:12-slim | hardening scripts |
+| ubuntu-hardened | Security-hardened Ubuntu base | ubuntu:24.04 | hardening scripts |
+| ansible | Configuration management | alpine-hardened | ansible, git, ssh, jq, yq |
+| terraform | Infrastructure provisioning | alpine-hardened | terraform, git, jq, yq |
+| omnibus | All-in-one operations | alpine-hardened | ansible, terraform, python, wireguard |
+| k8s-tools | Kubernetes management | alpine-hardened | kubectl, helm, kustomize, flux, sops |
+| ci-tools | CI/CD linting | alpine-hardened | shellcheck, hadolint, actionlint |
+| ubuntu-server | Server utilities | ubuntu-hardened | curl, git, ssh, jq, yq, net-tools |
+| ubuntu-workstation | XFCE desktop with VNC | ubuntu-hardened | xfce4, tigervnc, novnc, firefox |
+| python | Python applications | python:3.12-slim | python3, pip |
+| python-ffmpeg | Media processing | python:3.12-slim | python3, pip, ffmpeg |
+| arc-runner | GitHub Actions runner | actions-runner | gh, node, podman, claude |
 
 ## Do Not
 
@@ -152,3 +170,4 @@ cat src/ansible/dockerfile
 - Use `latest` tag in production
 - Add secrets or credentials
 - Change base images without testing multi-arch compatibility
+- Use `/<name>:` as a needle for dependency matching (use full registry path to avoid self-matching)
