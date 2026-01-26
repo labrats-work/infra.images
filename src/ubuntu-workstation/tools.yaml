@@ -56,8 +56,8 @@ tools:
     description: Create desktop user with sudo access
     method: script
     script: |
-      groupadd -g 1000 user
-      useradd -u 1000 -g user -d /home/user -s /bin/bash -m user
+      getent group user >/dev/null 2>&1 || groupadd -g 1000 user
+      id -u user >/dev/null 2>&1 || useradd -u 1000 -g user -d /home/user -s /bin/bash -m user
       echo "user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/user
       chmod 0440 /etc/sudoers.d/user
       mkdir -p /home/user/.vnc /home/user/Desktop
