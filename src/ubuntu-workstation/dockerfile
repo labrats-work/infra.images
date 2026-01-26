@@ -1,0 +1,63 @@
+# ubuntu-workstation Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - core-utils: Core utilities and build tools
+#   - locale-setup: Configure UTF-8 locale
+#   - xfce-desktop: XFCE4 lightweight desktop environment
+#   - tigervnc: TigerVNC server for remote desktop access
+#   - novnc: noVNC HTML5 VNC client for browser access
+#   - desktop-apps: Common desktop applications
+#   - desktop-user: Create desktop user with sudo access
+#   - vnc-startup: VNC startup script
+
+FROM ghcr.io/labrats-work/infra.images/ubuntu-hardened:main
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="ubuntu-workstation infrastructure image"
+
+ARG VNC_RESOLUTION=1920x1080
+ENV VNC_RESOLUTION=${VNC_RESOLUTION}
+
+# Install packages
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl wget git sudo locales xfce4-screenshooter mousepad file-roller && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install locale-setup (Configure UTF-8 locale)
+RUN sed -i '/en_US.UTF-8/s/^# //' /etc/locale.gen && \
+    locale-gen en_US.UTF-8
+
+# Install xfce-desktop (XFCE4 lightweight desktop environment)
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xfce4 xfce4-terminal xfce4-taskmanager dbus-x11 xfonts-base fonts-dejavu-core fonts-liberation libgl1-mesa-dri mesa-utils at-spi2-core && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install tigervnc (TigerVNC server for remote desktop access)
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-common && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install novnc (noVNC HTML5 VNC client for browser access)
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends novnc websockify python3-minimal && \
+    ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install desktop-user (Create desktop user with sudo access)
+RUN userdel -r ubuntu 2>/dev/null; groupdel ubuntu 2>/dev/null; groupadd -g 1000 user && \
+    useradd -u 1000 -g user -d /home/user -s /bin/bash -m user && \
+    echo "user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/user && \
+    chmod 0440 /etc/sudoers.d/user && \
+    mkdir -p /home/user/.vnc /home/user/Desktop && \
+    chown -R user:user /home/user
+
+# Install vnc-startup (VNC startup script)
+RUN printf '#!/bin/bash\nset -e\nVNC_PORT="${VNC_PORT:-5901}"\nNOVNC_PORT="${NOVNC_PORT:-6080}"\nRESOLUTION="${VNC_RESOLUTION:-1920x1080}"\nVNC_PW="${VNC_PASSWORD:-changeme}"\nmkdir -p ~/.vnc\necho "$VNC_PW" | vncpasswd -f > ~/.vnc/passwd\nchmod 600 ~/.vnc/passwd\nprintf '"'"'#!/bin/bash\\nunset SESSION_MANAGER\\nunset DBUS_SESSION_BUS_ADDRESS\\nexec startxfce4\\n'"'"' > ~/.vnc/xstartup\nchmod +x ~/.vnc/xstartup\nvncserver :1 -geometry "$RESOLUTION" -depth 24 -localhost no -SecurityTypes VncAuth\nwebsockify --web /usr/share/novnc "$NOVNC_PORT" localhost:"$VNC_PORT" &\necho "VNC on port $VNC_PORT, noVNC on port $NOVNC_PORT"\ntail -f /dev/null\n' > /usr/local/bin/start-vnc && \
+    chmod +x /usr/local/bin/start-vnc
+
+WORKDIR /home/user
+
+ENTRYPOINT []
+CMD []

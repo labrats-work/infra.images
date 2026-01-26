@@ -1,0 +1,33 @@
+# node-hardened Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - nodejs: Node.js JavaScript runtime
+#   - npm: Node.js package manager
+#   - git: Version control
+#   - curl: URL transfer tool
+#   - jq: JSON processor
+#   - tini: Minimal init system for containers
+#   - node-setup: Configure npm global directory for nonroot user
+
+FROM --platform=$TARGETPLATFORM ghcr.io/labrats-work/infra.images/alpine-hardened:main
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="node-hardened infrastructure image"
+
+# Install packages
+RUN apk add --no-cache nodejs npm git curl jq tini
+
+# Install node-setup (Configure npm global directory for nonroot user)
+RUN mkdir -p /app/.npm-global && \
+    npm config --global set prefix /app/.npm-global && \
+    echo 'export PATH=/app/.npm-global/bin:$PATH' >> /etc/profile && \
+    chown -R nonroot:nonroot /app
+
+WORKDIR /app
+
+ENTRYPOINT []
+CMD []

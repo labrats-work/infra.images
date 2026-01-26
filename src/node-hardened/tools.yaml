@@ -1,0 +1,46 @@
+# Node Hardened Image Configuration
+# Security-hardened Node.js runtime based on Alpine hardened base
+base: ghcr.io/labrats-work/infra.images/alpine-hardened:main
+package_manager: apk
+multi_arch: true
+workdir: /app
+
+tools:
+  - name: nodejs
+    description: Node.js JavaScript runtime
+    method: package
+    package: nodejs
+
+  - name: npm
+    description: Node.js package manager
+    method: package
+    package: npm
+
+  - name: git
+    description: Version control
+    method: package
+    package: git
+
+  - name: curl
+    description: URL transfer tool
+    method: package
+    package: curl
+
+  - name: jq
+    description: JSON processor
+    method: package
+    package: jq
+
+  - name: tini
+    description: Minimal init system for containers
+    method: package
+    package: tini
+
+  - name: node-setup
+    description: Configure npm global directory for nonroot user
+    method: script
+    script: |
+      mkdir -p /app/.npm-global
+      npm config --global set prefix /app/.npm-global
+      echo 'export PATH=/app/.npm-global/bin:$PATH' >> /etc/profile
+      chown -R nonroot:nonroot /app

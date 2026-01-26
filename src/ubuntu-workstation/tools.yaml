@@ -27,11 +27,7 @@ tools:
     method: script
     script: |
       apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        xfce4 xfce4-terminal xfce4-taskmanager dbus-x11 \
-        xfonts-base fonts-dejavu-core fonts-liberation \
-        libgl1-mesa-dri mesa-utils \
-        at-spi2-core
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xfce4 xfce4-terminal xfce4-taskmanager dbus-x11 xfonts-base fonts-dejavu-core fonts-liberation libgl1-mesa-dri mesa-utils at-spi2-core
       rm -rf /var/lib/apt/lists/*
 
   - name: tigervnc
@@ -39,8 +35,7 @@ tools:
     method: script
     script: |
       apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        tigervnc-standalone-server tigervnc-common
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-common
       rm -rf /var/lib/apt/lists/*
 
   - name: novnc
@@ -48,21 +43,20 @@ tools:
     method: script
     script: |
       apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        novnc websockify python3-minimal
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends novnc websockify python3-minimal
       ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
       rm -rf /var/lib/apt/lists/*
 
   - name: desktop-apps
     description: Common desktop applications
     method: package
-    package: firefox xfce4-screenshooter mousepad file-roller
+    package: xfce4-screenshooter mousepad file-roller
 
   - name: desktop-user
     description: Create desktop user with sudo access
     method: script
     script: |
-      groupadd -g 1000 user
+      userdel -r ubuntu 2>/dev/null; groupdel ubuntu 2>/dev/null; groupadd -g 1000 user
       useradd -u 1000 -g user -d /home/user -s /bin/bash -m user
       echo "user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/user
       chmod 0440 /etc/sudoers.d/user
@@ -73,42 +67,5 @@ tools:
     description: VNC startup script
     method: script
     script: |
-      cat > /usr/local/bin/start-vnc <<'STARTUP'
-      #!/bin/bash
-      set -e
-
-      VNC_PORT="${VNC_PORT:-5901}"
-      NOVNC_PORT="${NOVNC_PORT:-6080}"
-      RESOLUTION="${VNC_RESOLUTION:-1920x1080}"
-      VNC_PW="${VNC_PASSWORD:-changeme}"
-
-      # Set VNC password
-      mkdir -p ~/.vnc
-      echo "$VNC_PW" | vncpasswd -f > ~/.vnc/passwd
-      chmod 600 ~/.vnc/passwd
-
-      # Write xstartup
-      cat > ~/.vnc/xstartup <<'EOF'
-      #!/bin/bash
-      unset SESSION_MANAGER
-      unset DBUS_SESSION_BUS_ADDRESS
-      exec startxfce4
-      EOF
-      chmod +x ~/.vnc/xstartup
-
-      # Start VNC server
-      vncserver :1 -geometry "$RESOLUTION" -depth 24 -localhost no -SecurityTypes VncAuth
-
-      # Start noVNC (websocket proxy for browser access)
-      websockify --web /usr/share/novnc "$NOVNC_PORT" localhost:"$VNC_PORT" &
-
-      echo "============================================"
-      echo "VNC server running on port $VNC_PORT"
-      echo "noVNC (browser) running on port $NOVNC_PORT"
-      echo "Connect via browser: http://localhost:$NOVNC_PORT"
-      echo "============================================"
-
-      # Keep running
-      tail -f /dev/null
-      STARTUP
+      printf '#!/bin/bash\nset -e\nVNC_PORT="${VNC_PORT:-5901}"\nNOVNC_PORT="${NOVNC_PORT:-6080}"\nRESOLUTION="${VNC_RESOLUTION:-1920x1080}"\nVNC_PW="${VNC_PASSWORD:-changeme}"\nmkdir -p ~/.vnc\necho "$VNC_PW" | vncpasswd -f > ~/.vnc/passwd\nchmod 600 ~/.vnc/passwd\nprintf '"'"'#!/bin/bash\\nunset SESSION_MANAGER\\nunset DBUS_SESSION_BUS_ADDRESS\\nexec startxfce4\\n'"'"' > ~/.vnc/xstartup\nchmod +x ~/.vnc/xstartup\nvncserver :1 -geometry "$RESOLUTION" -depth 24 -localhost no -SecurityTypes VncAuth\nwebsockify --web /usr/share/novnc "$NOVNC_PORT" localhost:"$VNC_PORT" &\necho "VNC on port $VNC_PORT, noVNC on port $NOVNC_PORT"\ntail -f /dev/null\n' > /usr/local/bin/start-vnc
       chmod +x /usr/local/bin/start-vnc
