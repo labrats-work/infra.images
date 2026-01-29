@@ -53,3 +53,12 @@ tools:
     method: script
     script: |
       npm install -g @anthropic-ai/claude-code
+
+  - name: kaniko
+    description: Daemonless container image builder
+    method: script
+    script: |
+      mkdir -p /kaniko
+      curl -fsSL -o /kaniko/executor https://github.com/GoogleContainerTools/kaniko/releases/download/v1.23.2/executor
+      chmod +x /kaniko/executor
+      ln -sf /kaniko/executor /usr/local/bin/kaniko
