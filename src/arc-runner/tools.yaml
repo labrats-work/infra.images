@@ -54,23 +54,3 @@ tools:
     script: |
       npm install -g @anthropic-ai/claude-code
 
-  - name: kaniko
-    description: Daemonless container image builder
-    method: script
-    script: |
-      # Extract kaniko executor from container image using skopeo and tar
-      mkdir -p /kaniko /tmp/kaniko-extract
-      cd /tmp/kaniko-extract
-      # Download and extract the kaniko image
-      skopeo copy docker://gcr.io/kaniko-project/executor:v1.23.2 dir:./kaniko-image
-      # Extract the executor binary from the image layers
-      for layer in kaniko-image/*.tar; do
-        tar -xf "$layer" -C /tmp/kaniko-extract 2>/dev/null || true
-      done
-      # Copy the executor binary
-      cp /tmp/kaniko-extract/kaniko/executor /kaniko/executor
-      chmod +x /kaniko/executor
-      ln -sf /kaniko/executor /usr/local/bin/kaniko
-      # Cleanup
-      cd /
-      rm -rf /tmp/kaniko-extract
