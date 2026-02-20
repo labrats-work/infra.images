@@ -1,0 +1,31 @@
+# ubuntu-server Image
+# AUTO-GENERATED from tools.yaml - do not edit directly!
+#
+# Tools included:
+#   - core-utils: Core server utilities
+#   - yq: YAML processor
+#   - net-tools: Network diagnostic tools
+#   - editors: Terminal editors
+
+FROM --platform=$TARGETPLATFORM ghcr.io/labrats-work/infra.images/ubuntu-hardened:main
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+LABEL org.opencontainers.image.authors="tompisula@labrats.work"
+LABEL org.opencontainers.image.source="https://github.com/labrats-work/infra.images"
+LABEL org.opencontainers.image.description="ubuntu-server infrastructure image"
+
+# Install packages
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl wget git openssh-client jq sudo iputils-ping dnsutils netcat-openbsd iproute2 vim-tiny nano && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install yq (YAML processor)
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then ARCH="amd64"; else ARCH="arm64"; fi && \
+    curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}" -o /usr/local/bin/yq && \
+    chmod +x /usr/local/bin/yq
+
+WORKDIR /app
+
+ENTRYPOINT []
+CMD []
