@@ -2,6 +2,7 @@
 # AUTO-GENERATED from tools.yaml - do not edit directly!
 #
 # Tools included:
+#   - build-essential: C/C++ compiler and build tools
 #   - jq: JSON processor
 #   - gh: GitHub CLI
 #   - node: Node.js runtime
@@ -20,7 +21,7 @@ USER root
 
 # Install packages
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends jq && \
+    apt-get install -y --no-install-recommends build-essential jq && \
     rm -rf /var/lib/apt/lists/*
 
 # Install yq (YAML processor)
