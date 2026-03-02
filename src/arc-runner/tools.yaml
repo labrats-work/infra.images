@@ -60,8 +60,7 @@ tools:
       mv /tmp/docker/docker /usr/local/bin/docker
       rm -rf /tmp/docker
       mkdir -p /usr/local/lib/docker/cli-plugins
-      curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-buildx \
-        https://github.com/docker/buildx/releases/download/v0.21.1/buildx-v0.21.1.linux-amd64
+      curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.21.1/buildx-v0.21.1.linux-amd64
       chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
   - name: claude
