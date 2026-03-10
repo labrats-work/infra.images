@@ -8,6 +8,7 @@
 #   - node: Node.js runtime
 #   - yq: YAML processor
 #   - podman: Container engine
+#   - docker: Docker CLI and buildx plugin
 #   - claude: Claude Code CLI
 #   - playwright-deps: Playwright/Chromium browser dependencies
 
@@ -45,10 +46,17 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
 # Install podman (Container engine)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends podman buildah skopeo fuse-overlayfs && \
-    ln -sf /usr/bin/podman /usr/local/bin/docker && \
     mkdir -p /etc/containers && \
     echo 'unqualified-search-registries = ["docker.io", "ghcr.io"]' > /etc/containers/registries.conf && \
     rm -rf /var/lib/apt/lists/*
+
+# Install docker (Docker CLI and buildx plugin)
+RUN curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz | tar xz -C /tmp && \
+    mv /tmp/docker/docker /usr/local/bin/docker && \
+    rm -rf /tmp/docker && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.21.1/buildx-v0.21.1.linux-amd64 && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
 # Install claude (Claude Code CLI)
 RUN npm install -g @anthropic-ai/claude-code
