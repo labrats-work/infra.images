@@ -10,6 +10,7 @@
 #   - podman: Container engine
 #   - docker: Docker CLI and buildx plugin
 #   - claude: Claude Code CLI
+#   - python3-pip: Python package installer
 #   - playwright-deps: Playwright/Chromium browser dependencies
 
 FROM ghcr.io/actions/actions-runner:latest
@@ -22,7 +23,7 @@ USER root
 
 # Install packages
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential jq && \
+    apt-get install -y --no-install-recommends build-essential jq python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
 # Install yq (YAML processor)
