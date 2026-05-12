@@ -69,6 +69,11 @@ tools:
     script: |
       npm install -g @anthropic-ai/claude-code
 
+  - name: python3-pip
+    description: Python package installer
+    method: package
+    package: python3-pip
+
   - name: playwright-deps
     description: Playwright/Chromium browser dependencies
     method: script
