@@ -70,9 +70,12 @@ tools:
       npm install -g @anthropic-ai/claude-code
 
   - name: python3-pip
-    description: Python package installer
-    method: package
-    package: python3-pip
+    description: Python package installer and venv support
+    method: script
+    script: |
+      apt-get update
+      apt-get install -y --no-install-recommends python3-pip python3-venv
+      rm -rf /var/lib/apt/lists/*
 
   - name: playwright-deps
     description: Playwright/Chromium browser dependencies

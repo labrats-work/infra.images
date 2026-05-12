@@ -10,7 +10,7 @@
 #   - podman: Container engine
 #   - docker: Docker CLI and buildx plugin
 #   - claude: Claude Code CLI
-#   - python3-pip: Python package installer
+#   - python3-pip: Python package installer and venv support
 #   - playwright-deps: Playwright/Chromium browser dependencies
 
 FROM ghcr.io/actions/actions-runner:latest
@@ -23,7 +23,7 @@ USER root
 
 # Install packages
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential jq python3-pip && \
+    apt-get install -y --no-install-recommends build-essential jq && \
     rm -rf /var/lib/apt/lists/*
 
 # Install yq (YAML processor)
@@ -61,6 +61,11 @@ RUN curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.
 
 # Install claude (Claude Code CLI)
 RUN npm install -g @anthropic-ai/claude-code
+
+# Install python3-pip (Python package installer and venv support)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3-pip python3-venv && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install playwright-deps (Playwright/Chromium browser dependencies)
 RUN apt-get update && \
