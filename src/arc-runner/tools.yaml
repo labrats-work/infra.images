@@ -36,6 +36,25 @@ tools:
       apt-get install -y --no-install-recommends nodejs
       rm -rf /var/lib/apt/lists/*
 
+  - name: node20-alpine-externals
+    description: Node 20 musl in runner externals for Alpine job containers
+    method: script
+    script: |
+      # Without this, JS actions (e.g. actions/create-github-app-token) fail
+      # inside Alpine-based job containers (those set via the `container:`
+      # workflow directive) with:
+      #   stat /__e/node20_alpine/bin/node: no such file or directory
+      # The GH Actions runner mounts /home/runner/externals as /__e in the
+      # job container; we place the musl-linked node20 there so the runner
+      # can inject it when it detects Alpine via /etc/*release.
+      NODE_VERSION="20.18.1"
+      EXTERNALS_DIR="/home/runner/externals/node20_alpine"
+      mkdir -p "$EXTERNALS_DIR"
+      curl -fsSL "https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64-musl.tar.gz" -o /tmp/node-alpine.tar.gz
+      tar -xz -f /tmp/node-alpine.tar.gz -C "$EXTERNALS_DIR" --strip-components=1
+      rm /tmp/node-alpine.tar.gz
+      chown -R runner:runner "$EXTERNALS_DIR"
+
   - name: yq
     description: YAML processor
     method: binary
