@@ -50,8 +50,9 @@ tools:
       NODE_VERSION="20.18.1"
       EXTERNALS_DIR="/home/runner/externals/node20_alpine"
       mkdir -p "$EXTERNALS_DIR"
-      curl -fsSL "https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64-musl.tar.gz" \
-        | tar -xz -C "$EXTERNALS_DIR" --strip-components=1
+      curl -fsSL "https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64-musl.tar.gz" -o /tmp/node-alpine.tar.gz
+      tar -xz -f /tmp/node-alpine.tar.gz -C "$EXTERNALS_DIR" --strip-components=1
+      rm /tmp/node-alpine.tar.gz
       chown -R runner:runner "$EXTERNALS_DIR"
 
   - name: yq
