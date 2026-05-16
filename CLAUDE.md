@@ -51,7 +51,6 @@ Root images have external bases. Derived images reference `ghcr.io/labrats-work/
 - `ubuntu:24.04` → `ubuntu-hardened` → ubuntu-server, ubuntu-workstation
 - `debian:12-slim` → `debian-hardened`
 - `python:3.12-slim` → python, python-ffmpeg
-- `actions-runner:latest` → arc-runner
 
 ## Rules
 
