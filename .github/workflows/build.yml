@@ -29,7 +29,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   actions: write
 
@@ -49,24 +49,63 @@ env:
 
 jobs:
   # ==================================================================
-  # ORCHESTRATOR MODE - detect changes, build roots
+  # RELEASE - create semver tag on push to main
   # ==================================================================
 
-  detect-changes:
-    if: inputs.from_image == ''
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      root_images: ${{ steps.detect.outputs.root_images }}
-      changed_derived: ${{ steps.detect.outputs.changed_derived }}
+      created: ${{ steps.release.outputs.created }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Create release
+        id: release
+        uses: labrats-work/actions.common/semver-release@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==================================================================
+  # ORCHESTRATOR MODE - detect changes, build roots
+  # ==================================================================
+
+  detect-changes:
+    needs: [release]
+    if: always() && inputs.from_image == ''
+    runs-on: ubuntu-latest
+    outputs:
+      root_images: ${{ steps.detect.outputs.root_images }}
+      changed_derived: ${{ steps.detect.outputs.changed_derived }}
+      version: ${{ steps.version.outputs.version }}
+      version_major_minor: ${{ steps.version.outputs.version_major_minor }}
+      version_major: ${{ steps.version.outputs.version_major }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version components
+        id: version
+        if: needs.release.outputs.created == 'true'
+        run: |
+          version="${{ needs.release.outputs.version }}"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version_major_minor=$(echo "$version" | cut -d. -f1-2)" >> $GITHUB_OUTPUT
+          echo "version_major=$(echo "$version" | cut -d. -f1)" >> $GITHUB_OUTPUT
+
       - name: Detect changes
         id: detect
         run: |
           build_all=false
+
+          # Release created → build everything with semver tags
+          if [ "${{ needs.release.outputs.created }}" = "true" ]; then
+            build_all=true
+          fi
 
           # Tag push or PR → build everything
           if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" =~ ^refs/tags/ ]]; then
@@ -169,6 +208,9 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,prefix=sha-
+            type=raw,value=${{ needs.detect-changes.outputs.version }},enable=${{ needs.detect-changes.outputs.version != '' }}
+            type=raw,value=${{ needs.detect-changes.outputs.version_major_minor }},enable=${{ needs.detect-changes.outputs.version_major_minor != '' }}
+            type=raw,value=${{ needs.detect-changes.outputs.version_major }},enable=${{ needs.detect-changes.outputs.version_major != '' }}
 
       - name: Set up QEMU
         if: steps.config.outputs.multi_arch == 'true'
@@ -210,7 +252,8 @@ jobs:
         run: |
           image="${{ matrix.image }}"
           tag="sha-${GITHUB_SHA::7}"
-          ref="${{ github.head_ref || github.ref_name }}"
+          version="${{ needs.detect-changes.outputs.version }}"
+          ref="${version:-${{ github.head_ref || github.ref_name }}}"
           from_image="${image}:${tag}"
 
           dependents=$(python3 find-dependents.py --from-image "$image")
@@ -294,6 +337,9 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,prefix=sha-
+            type=raw,value=${{ needs.detect-changes.outputs.version }},enable=${{ needs.detect-changes.outputs.version != '' }}
+            type=raw,value=${{ needs.detect-changes.outputs.version_major_minor }},enable=${{ needs.detect-changes.outputs.version_major_minor != '' }}
+            type=raw,value=${{ needs.detect-changes.outputs.version_major }},enable=${{ needs.detect-changes.outputs.version_major != '' }}
 
       - name: Set up QEMU
         if: steps.config.outputs.multi_arch == 'true'
@@ -409,6 +455,9 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
 
       - name: Set up QEMU
         if: steps.config.outputs.multi_arch == 'true'
